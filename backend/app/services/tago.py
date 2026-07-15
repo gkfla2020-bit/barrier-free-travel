@@ -87,14 +87,93 @@ def _arrivals(city, node) -> list:
     return rows
 
 
+# ── 서울 어댑터 ─────────────────────────────────────────────
+# 국토부 TAGO는 서울을 커버하지 않는다(정류소 검색 0건) → 서울시 버스정보시스템으로 대체.
+# data.go.kr 동일 키를 쓰지만 서비스별 활용신청이 따로 필요하다:
+#   정류소정보조회(15000303) getStationByPos · 버스도착정보조회(15000314) getLowArrInfoByStId
+SEOUL_BBOX = (37.41, 37.72, 126.73, 127.27)
+SEOUL_BASE = "http://ws.bus.go.kr/api/rest"
+
+
+def _in_seoul(lat: float, lng: float) -> bool:
+    return SEOUL_BBOX[0] <= lat <= SEOUL_BBOX[1] and SEOUL_BBOX[2] <= lng <= SEOUL_BBOX[3]
+
+
+def _seoul_rows(path: str, **params) -> list | None:
+    """서울 BIS 공통 호출 — headerCd 0 정상 / 4·8 빈 결과 / 그 외(인증실패 7 등) None."""
+    key = os.environ.get("TAGO_API_KEY", "")
+    if not key:
+        return None
+    for attempt in range(2):
+        try:
+            r = httpx.get(f"{SEOUL_BASE}/{path}",
+                          params={"serviceKey": key, "resultType": "json", **params},
+                          timeout=8.0)
+            data = r.json()
+            code = str(data.get("msgHeader", {}).get("headerCd"))
+            if code == "0":
+                return data.get("msgBody", {}).get("itemList") or []
+            if code in ("4", "8"):
+                return []
+            return None
+        except Exception:
+            if attempt == 0:
+                time.sleep(0.4)
+    return None
+
+
+def _seoul_next_low(lat: float, lng: float, bus_no: str, stop_name: str = "") -> tuple[bool | None, str]:
+    """서울: 좌표 근접 정류소 → 저상버스 도착정보에서 노선 매칭.
+    저상 도착 목록에 있으면 확정 저상. 목록에 없다고 '일반차량'이라 단정할 근거는
+    없으므로(일반 도착정보 조회는 노선ID+순번이 필요해 MVP 제외) None으로 둔다."""
+    ck = ("SEOUL", round(lat, 4), round(lng, 4))
+    stops = _stop_cache.get(ck)
+    if stops is None:
+        rows = _seoul_rows("stationinfo/getStationByPos", tmX=lng, tmY=lat, radius=180) or []
+        target = _norm(stop_name)
+
+        def score(r):
+            nm = _norm(r.get("stationNm", ""))
+            similar = target and nm and (nm in target or target in nm)
+            return (0 if similar else 1, float(r.get("dist", 9999)))
+
+        stops = [r.get("stationId") for r in sorted(rows, key=score) if r.get("stationId")][:4]
+        _stop_cache[ck] = stops
+
+    tno = _norm(bus_no)
+    for st_id in stops:
+        ak, now = ("SEOUL", st_id), time.time()
+        cached = _arrival_cache.get(ak)
+        if cached and now - cached[0] < ARRIVAL_TTL:
+            rows = cached[1]
+        else:
+            rows = _seoul_rows("arrive/getLowArrInfoByStId", stId=st_id)
+            if rows is None:
+                continue
+            _arrival_cache[ak] = (now, rows)
+        for r in rows:
+            msg = str(r.get("arrmsg1", ""))
+            if "운행종료" in msg:
+                continue
+            name = _norm(r.get("rtNm", ""))
+            if name == tno or (tno and tno in name):
+                m = re.search(r"(\d+)분", msg)
+                when = f" · 약 {m.group(1)}분 후 도착" if m else (" · 곧 도착" if "곧" in msg else "")
+                return True, f"다음 {r.get('rtNm')}번은 저상버스입니다{when}"
+    return None, ""
+
+
 def next_bus(lat: float, lng: float, bus_no: str, stop_name: str = "") -> tuple[bool | None, str]:
     """승차 정류장의 해당 노선 다음 버스 → (저상 여부, 안내문). 정보 없으면 (None, '').
-    후보 정류소를 순회하며 해당 노선이 잡히는 곳을 찾는다."""
+    후보 정류소를 순회하며 해당 노선이 잡히는 곳을 찾는다. 서울은 서울 BIS로 위임."""
     tno = _norm(bus_no)
     if not tno:
         return None, ""
+    stops = _find_stops(lat, lng, stop_name)
+    if not stops and _in_seoul(lat, lng):
+        return _seoul_next_low(lat, lng, bus_no, stop_name)
     matches: list = []
-    for city, node in _find_stops(lat, lng, stop_name):
+    for city, node in stops:
         rows = _arrivals(city, node)
         matches = [r for r in rows if _norm(r.get("routeno", "")) == tno] \
             or [r for r in rows if tno in _norm(r.get("routeno", ""))]
