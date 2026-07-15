@@ -6,6 +6,7 @@
   가능성으로 취급하고 난이도를 최소 '중간'으로 올린다.
 - 버스 구간은 저상버스 여부 확인 안내를 붙인다 (TAGO 실시간 연동은 다음 단계).
 - ODSAY_API_KEY 미설정·호출 실패 시 도보 경로로 폴백 — 앱은 안 죽는다.
+- avoid_slope=True면 모든 도보 구간(tmap._leg)에 경사 회피 우회 탐색을 전달한다.
 """
 import math
 import os
@@ -137,27 +138,29 @@ def _walk_segment(base: dict) -> dict:
     항상 빈 리스트(Req 3.9)."""
     return {"mode": "walk", "name": "도보", "polyline": list(base.get("polyline", [])),
             "distance": base.get("distance", 0), "duration": base.get("duration", 0),
-            "stations": [], "color": ""}
+            "stations": [], "color": "",
+            "stairsPossible": base.get("stairsPossible", False)}
 
 
-def _walk_to(cursor: dict, target: dict) -> dict:
+def _walk_to(cursor: dict, target: dict, avoid_slope: bool = False) -> dict:
     """도보 구간 — Tmap 계단회피(_leg)를 그대로 재사용해 난이도·안내문까지 얻는다."""
-    w = tmap._leg(cursor, target)
+    w = tmap._leg(cursor, target, avoid_slope)
     seg = {"mode": "walk", "name": "도보", "polyline": w["polyline"],
            "distance": w["distance"], "duration": w["duration"],
-           "stations": [], "color": ""}
+           "stations": [], "color": "",
+           "stairsPossible": w.get("stairsPossible", False)}
     return {"seg": seg, "leg": w}
 
 
-def _leg(start: dict, end: dict) -> dict:
-    ck = (round(start["lat"], 5), round(start["lng"], 5),
-          round(end["lat"], 5), round(end["lng"], 5))
+def _leg(start: dict, end: dict, avoid_slope: bool = False) -> dict:
+    ck = ((round(start["lat"], 5), round(start["lng"], 5),
+           round(end["lat"], 5), round(end["lng"], 5)), avoid_slope)
     if ck in _cache:
         return _cache[ck]
 
     path = _odsay(start, end)
     if not path:  # 키 없음 / 경로 없음 / 호출 실패 → 도보 폴백
-        base = tmap._leg(start, end)
+        base = tmap._leg(start, end, avoid_slope)
         leg = {**base, "mode": "walk", "segments": [_walk_segment(base)]}
         leg["guides"] = ["대중교통 경로를 찾지 못해 도보 경로로 안내합니다"] + leg["guides"]
         return leg
@@ -202,7 +205,7 @@ def _leg(start: dict, end: dict) -> dict:
 
     def add_walk(target: dict):
         nonlocal walk_m, dur_s, stairs, worst, cursor
-        w = _walk_to(cursor, target)
+        w = _walk_to(cursor, target, avoid_slope)
         segs.append(w["seg"])
         polyline.extend(w["seg"]["polyline"])
         walk_m += w["leg"]["distance"]
@@ -299,9 +302,10 @@ def _leg(start: dict, end: dict) -> dict:
     if has_subway and _RANK[worst] < _RANK["중간"]:
         worst = "중간"
 
+    # slope=None: 대중교통 leg는 도보 구간별 경사 정보를 집계하지 않음을 명시
     leg = {"mode": "transit", "segments": segs, "polyline": polyline,
            "distance": walk_m, "duration": dur_s, "guides": guides,
-           "stairsPossible": stairs, "fallback": False,
+           "stairsPossible": stairs, "fallback": False, "slope": None,
            "difficulty": worst, "reasons": reasons, "counts": counts,
            "_transit": {"subway": has_subway, "bus": has_bus}}
     _cache[ck] = leg
@@ -341,17 +345,14 @@ def _enrich_low_floor(leg: dict, deadline: float | None = None) -> None:
             leg["reasons"].append(f"{seg['name']} 다음 차량 저상 아님")
 
 
-def route(waypoints: list[dict]) -> dict:
-    # 저상버스 enrich 전체 예산: leg 루프 전체에 걸쳐 공유한다(Req 9.1).
-    # 이 시각을 넘기면 남은 버스 구간의 TAGO 실시간 조회를 건너뛴다.
-    enrich_deadline = time.monotonic() + LOW_FLOOR_BUDGET_S
+def route(waypoints: list[dict], avoid_slope: bool = False) -> dict:
     legs = []
     for a, b in zip(waypoints, waypoints[1:]):
         if _straight_m(a, b) <= WALK_ONLY_M:
-            walk = tmap._leg(a, b)
+            walk = tmap._leg(a, b, avoid_slope)
             base = {**walk, "mode": "walk", "segments": [_walk_segment(walk)]}
         else:
-            base = _leg(a, b)
+            base = _leg(a, b, avoid_slope)
         # 캐시 원본을 오염시키지 않도록 복사 후 실시간 정보를 얹는다
         leg = {**base, "guides": list(base["guides"]), "reasons": list(base["reasons"]),
                "segments": [dict(s) for s in base.get("segments", [])]}
@@ -359,8 +360,14 @@ def route(waypoints: list[dict]) -> dict:
         # 어느 구간(출발지→도착지)이 라우팅되지 못했는지 이름으로 안내한다(Req 9.3).
         if leg.get("fallback"):
             tmap.mark_unrouted(leg, a, b)
-        _enrich_low_floor(leg, deadline=enrich_deadline)
         legs.append(leg)
+
+    # 저상버스 enrich 전체 예산(Req 9.1) — 경로·표고 생성이 끝난 '지금'부터 잰다.
+    # 예전엔 leg 생성 시간까지 포함해서, 콜드 캐시 + 표고 조회가 붙으면 정작 TAGO를
+    # 한 번도 못 부르고 예산이 끝나는 문제가 있었다 (부산 4구간 실측: 마지막 버스 None).
+    enrich_deadline = time.monotonic() + LOW_FLOOR_BUDGET_S
+    for leg in legs:
+        _enrich_low_floor(leg, deadline=enrich_deadline)
 
     # 전체 도보 거리 = 모든 walk segment distance 합(Req 4.2). 각 leg의 distance는
     # walk segment 거리 합으로 구성되므로 leg-level 합과 동일하지만, 명세를 정확히
@@ -372,7 +379,17 @@ def route(waypoints: list[dict]) -> dict:
         worst = "어려움"
 
     n_transit = sum(1 for l in legs if l.get("mode") == "transit")
-    reasons = [f"총 도보 {total_walk}m", f"대중교통 {n_transit}개 구간 이용"]
+
+    # 코스 전체 경사 — 도보 leg의 표고 프로파일을 tmap.route와 동일 로직으로 집계.
+    # 대중교통 leg는 slope=None이라 covered=False로 내려가는 게 정직한 동작이다.
+    slope = tmap.course_slope(legs)
+    reasons = []
+    if slope:
+        if slope["steepDist"]:
+            reasons.append(f"급경사(1/12 초과) {slope['steepDist']}m")
+        if slope["ascent"] >= 10:
+            reasons.append(f"누적 오르막 {slope['ascent']}m")
+    reasons += [f"총 도보 {total_walk}m", f"대중교통 {n_transit}개 구간 이용"]
     if any(l.get("_transit", {}).get("subway") for l in legs):
         reasons.append(NOTE_SUBWAY)
     # 실시간 조회로 저상 여부를 알아낸 구간은 구체적으로, 못 알아낸 구간만 일반 안내
@@ -394,4 +411,7 @@ def route(waypoints: list[dict]) -> dict:
 
     return {"legs": legs, "totalDistance": total_walk,
             "totalDuration": total_duration,
-            "difficulty": worst, "reasons": reasons}
+            "difficulty": worst, "reasons": reasons,
+            "avoidSlope": avoid_slope, "slope": slope,
+            # 회피 전/후 비교 — 도보 leg에 실제 우회(detour)가 있을 때만 값이 생긴다
+            "baseline": tmap.course_baseline(legs) if avoid_slope else None}

@@ -1,4 +1,4 @@
-import { Logo, BadgeIcon } from './Icons'
+import { BadgeIcon, Wordmark } from './Icons'
 
 const FEATURES = [
   { icon: 'wheelchair', title: '안전지대만 골라서', desc: '내 이동 조건을 100% 만족하는 무장애 인증 장소만 추천해요' },
@@ -10,8 +10,8 @@ export default function Landing({ onStart }) {
   return (
     <div className="landing">
       <div className="landing-inner">
-        <div className="landing-logo"><Logo size={72} /></div>
-        <h1>모두의 여행</h1>
+        <h1 className="landing-wordmark"><Wordmark size={34} /></h1>
+        <p className="landing-slogan">조금 돌아가더라도, 갈 수 없는 길이 없게</p>
         <p className="landing-tag">이동약자를 위한 무장애 여행 플래너</p>
 
         <ul className="landing-features">

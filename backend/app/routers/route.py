@@ -22,5 +22,5 @@ def get_route(req: RouteRequest):
                     "출발지를 선택하고 코스에 장소를 1개 이상 추가해주세요."
                 ),
             )
-        return transit.route(waypoints)
-    return tmap.route(waypoints)
+        return transit.route(waypoints, avoid_slope=req.avoidSlope)
+    return tmap.route(waypoints, req.avoidSlope)

@@ -14,10 +14,10 @@ body { font-family: 'Apple SD Gothic Neo', Pretendard, system-ui, sans-serif; co
   grid-area: top;
   display: flex; align-items: center; gap: 14px;
   padding: 0 18px;
-  background: #0f766e; color: #fff;
+  color: #334155; /* 배경은 아래 크림 규칙이 소유 — 로고가 주인공이 되게 밝게 */
 }
 .topbar h1 { font-size: 18px; }
-.topbar .sub { font-size: 12.5px; opacity: 0.9; }
+.topbar .sub { font-size: 12.5px; color: #8a7a6a; }
 .topbar .legend { margin-left: auto; font-size: 12px; display: flex; align-items: center; gap: 6px; }
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 .dot.tour { background: #2dd4bf; } .dot.food { background: #fb923c; }
@@ -40,13 +40,13 @@ body { font-family: 'Apple SD Gothic Neo', Pretendard, system-ui, sans-serif; co
 .chat-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 .msg { max-width: 92%; padding: 10px 13px; border-radius: 14px; font-size: 13.5px; line-height: 1.55; white-space: pre-line; }
 .msg.assistant { background: #fff; border: 1px solid #e2e8f0; align-self: flex-start; border-bottom-left-radius: 4px; }
-.msg.user { background: #0f766e; color: #fff; align-self: flex-end; border-bottom-right-radius: 4px; }
+.msg.user { background: #c2410c; color: #fff; align-self: flex-end; border-bottom-right-radius: 4px; }
 .msg.typing { color: #64748b; font-style: italic; animation: pulse 1.2s infinite; }
 @keyframes pulse { 50% { opacity: 0.5; } }
 
 /* 코스 카드 */
 .course-list { margin: 10px 0 2px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; }
-.course-list li { background: #f0fdfa; border: 1px solid #99f6e4; border-radius: 10px; padding: 9px 11px; }
+.course-list li { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; padding: 9px 11px; }
 .course-head { display: flex; align-items: center; gap: 8px; }
 .course-head .ctype { font-size: 11px; color: #64748b; margin-left: auto; }
 .num {
@@ -56,23 +56,23 @@ body { font-family: 'Apple SD Gothic Neo', Pretendard, system-ui, sans-serif; co
 }
 .num.food { background: #ea580c; }
 .course-badges { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 4px; }
-.badge { font-size: 11px; background: #ccfbf1; border-radius: 20px; padding: 2px 8px; }
+.badge { font-size: 11px; background: #ffedd5; border-radius: 20px; padding: 2px 8px; }
 .reason { font-size: 12px; color: #475569; }
 
 /* 퀵 칩 */
 .chips { padding: 0 14px 10px; display: flex; flex-wrap: wrap; gap: 6px; }
 .chip {
   font-size: 12px; padding: 7px 11px; border-radius: 18px; cursor: pointer;
-  border: 1px solid #99f6e4; background: #fff; color: #0f766e;
+  border: 1px solid #fed7aa; background: #fff; color: #c2410c;
 }
-.chip:hover { background: #f0fdfa; }
+.chip:hover { background: #fff7ed; }
 
 /* 입력 */
 .chat-input { display: flex; gap: 8px; padding: 12px 14px; border-top: 1px solid #e2e8f0; background: #fff; }
 .chat-input input { flex: 1; padding: 11px 13px; border: 1px solid #cbd5e1; border-radius: 10px; font-size: 13.5px; }
 .chat-input button {
   padding: 0 18px; border: 0; border-radius: 10px; cursor: pointer;
-  background: #0f766e; color: #fff; font-size: 13.5px; min-width: 74px; min-height: 44px;
+  background: #c2410c; color: #fff; font-size: 13.5px; min-width: 74px; min-height: 44px;
 }
 .chat-input button:disabled { opacity: 0.5; }
 
@@ -107,7 +107,7 @@ body { font-family: 'Apple SD Gothic Neo', Pretendard, system-ui, sans-serif; co
 .pop-title { font-weight: 700; margin-bottom: 2px; }
 .pop-type { font-size: 11px; color: #64748b; margin-bottom: 6px; }
 .pop-badges { display: flex; flex-wrap: wrap; gap: 4px; }
-.pop-badge { font-size: 11px; background: #ccfbf1; border-radius: 20px; padding: 2px 7px; }
+.pop-badge { font-size: 11px; background: #ffedd5; border-radius: 20px; padding: 2px 7px; }
 .pop-none { font-size: 11px; color: #94a3b8; }
 
 @media (max-width: 860px) {
@@ -127,8 +127,8 @@ body { font-family: 'Apple SD Gothic Neo', Pretendard, system-ui, sans-serif; co
 
 /* 설문 패널 */
 .persona-cta {
-  margin: 12px 14px 0; padding: 12px 14px; border: 1.5px dashed #0d9488; border-radius: 12px;
-  background: #f0fdfa; color: #0f766e; font-size: 13.5px; font-weight: 700; cursor: pointer;
+  margin: 12px 14px 0; padding: 12px 14px; border: 1.5px dashed #ea580c; border-radius: 12px;
+  background: #fff7ed; color: #c2410c; font-size: 13.5px; font-weight: 700; cursor: pointer;
   display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
 }
 .persona-cta span { font-weight: 400; font-size: 11.5px; color: #64748b; }
@@ -143,9 +143,9 @@ body { font-family: 'Apple SD Gothic Neo', Pretendard, system-ui, sans-serif; co
 .p-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .p-chip { font-size: 12.5px; padding: 8px 12px; border-radius: 18px; cursor: pointer;
   border: 1px solid #cbd5e1; background: #fff; min-height: 36px; }
-.p-chip.on { background: #0f766e; border-color: #0f766e; color: #fff; font-weight: 700; }
+.p-chip.on { background: #c2410c; border-color: #c2410c; color: #fff; font-weight: 700; }
 .p-submit { margin-top: 16px; padding: 13px; border: 0; border-radius: 12px; cursor: pointer;
-  background: #0f766e; color: #fff; font-size: 14px; font-weight: 700; }
+  background: #c2410c; color: #fff; font-size: 14px; font-weight: 700; }
 
 /* 카드 덱 */
 .card { border: 1px solid #e2e8f0; border-radius: 16px; background: #fff; overflow: hidden;
@@ -162,11 +162,11 @@ body { font-family: 'Apple SD Gothic Neo', Pretendard, system-ui, sans-serif; co
 .badge.big { font-size: 13px; padding: 5px 11px; }
 .card-raw { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .card-raw li { font-size: 12px; color: #475569; }
-.card-raw b { color: #0f766e; margin-right: 4px; }
+.card-raw b { color: #c2410c; margin-right: 4px; }
 .card-actions { display: flex; border-top: 1px solid #e2e8f0; }
 .card-actions button { flex: 1; padding: 14px; border: 0; cursor: pointer; font-size: 14.5px; font-weight: 700; }
 .card-actions .toss { background: #fff; color: #64748b; }
-.card-actions .take { background: #0f766e; color: #fff; }
+.card-actions .take { background: #c2410c; color: #fff; }
 
 /* 난이도 기준 안내 */
 .criteria { margin-top: 10px; border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 12px; background: #f8fafc; }
@@ -177,26 +177,26 @@ body { font-family: 'Apple SD Gothic Neo', Pretendard, system-ui, sans-serif; co
 .crit-note { color: #64748b; font-size: 11.5px; line-height: 1.5; }
 
 /* 온보딩 히어로 + 상단 페르소나 필 */
-.topbar { background: linear-gradient(100deg, #0f766e 0%, #115e59 60%, #134e4a 100%); }
+.topbar { background: #fffdf9; border-bottom: 1px solid #f3e3d1; }
 .persona-pill {
-  border: 1px solid rgb(255 255 255 / .45); background: rgb(255 255 255 / .12); color: #fff;
+  border: 1px solid #fed7aa; background: #fff7ed; color: #c2410c;
   border-radius: 20px; padding: 5px 12px; font-size: 12px; cursor: pointer; white-space: nowrap;
 }
-.persona-pill:hover { background: rgb(255 255 255 / .22); }
+.persona-pill:hover { background: #ffedd5; }
 .p-hero { text-align: center; padding: 18px 8px 6px; }
 .p-hero-icon {
   width: 52px; height: 52px; margin: 0 auto 10px; border-radius: 16px; font-size: 26px;
-  background: linear-gradient(135deg, #ccfbf1, #99f6e4); display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, #ffedd5, #fed7aa); display: flex; align-items: center; justify-content: center;
 }
 .p-hero h2 { font-size: 19px; margin-bottom: 6px; }
 .p-hero p { font-size: 12.5px; color: #64748b; line-height: 1.6; }
-.p-hero b { color: #0f766e; }
+.p-hero b { color: #c2410c; }
 .p-steps { display: flex; justify-content: center; gap: 6px; margin: 12px 0 4px; }
 .p-steps span { font-size: 11px; color: #94a3b8; background: #f1f5f9; border-radius: 14px; padding: 4px 9px; }
-.p-steps .on { background: #0f766e; color: #fff; font-weight: 700; }
+.p-steps .on { background: #c2410c; color: #fff; font-weight: 700; }
 .p-skip { margin-top: 10px; border: 0; background: none; color: #94a3b8; font-size: 12px;
   cursor: pointer; text-decoration: underline; padding: 6px; }
-.p-skip:hover { color: #0f766e; }
+.p-skip:hover { color: #c2410c; }
 
 /* 디자인 정돈: 로고·범례·지도 필터·구간 라인 */
 .topbar h1 { display: flex; align-items: center; gap: 9px; letter-spacing: -0.3px; }
@@ -211,10 +211,10 @@ body { font-family: 'Apple SD Gothic Neo', Pretendard, system-ui, sans-serif; co
   border-radius: 18px; padding: 7px 12px; font-size: 12.5px; cursor: pointer;
   box-shadow: 0 1px 4px rgb(15 23 42 / .12);
 }
-.map-filters button.on { background: #0f766e; border-color: #0f766e; color: #fff; font-weight: 700; }
+.map-filters button.on { background: #c2410c; border-color: #c2410c; color: #fff; font-weight: 700; }
 .map-filters svg { color: currentColor; }
 .p-hero-logo { display: flex; justify-content: center; margin-bottom: 10px; }
-.card-img.none { font-size: 38px; font-weight: 800; color: #0f766e; background: #f0fdfa; }
+.card-img.none { font-size: 38px; font-weight: 800; color: #c2410c; background: #fff7ed; }
 .leg-line.easy { background: #60a5fa; }
 .leg-line.mid { background: #f59e0b; }
 .leg-line.hard { background: #ef4444; }
@@ -236,13 +236,13 @@ body { font-family: 'Apple SD Gothic Neo', Pretendard, system-ui, sans-serif; co
   background: #ede9fe; color: #6d28d9; border-radius: 8px;
   padding: 1px 7px; font-size: 11px; font-weight: 700; margin-left: 6px; flex: none;
 }
-.leg li.transit { color: #0f766e; font-weight: 600; }
+.leg li.transit { color: #c2410c; font-weight: 600; }
 
 /* 대중교통 구간 상세 (RouteSteps segment) */
 .seg-list { border-left: 2px solid #e2e8f0; margin-left: 4px; }
 .seg-list li.transit { align-items: flex-start; }
 .seg-mode-tag {
-  display: inline-block; color: #fff; background: #0f766e; border-radius: 6px;
+  display: inline-block; color: #fff; background: #c2410c; border-radius: 6px;
   padding: 1px 6px; font-size: 10.5px; font-weight: 700; flex: none; line-height: 1.5;
 }
 .seg-detail { font-size: 12.5px; color: #334155; line-height: 1.5; }
@@ -264,7 +264,7 @@ body { font-family: 'Apple SD Gothic Neo', Pretendard, system-ui, sans-serif; co
 /* 랜딩 페이지 */
 .landing {
   position: fixed; inset: 0; z-index: 100;
-  background: linear-gradient(150deg, #0f766e 0%, #115e59 55%, #0f172a 130%);
+  background: linear-gradient(160deg, #fff7ed 0%, #ffedd5 45%, #fde8d0 100%);
   display: flex; align-items: center; justify-content: center; padding: 24px;
 }
 .landing-inner {
@@ -279,13 +279,13 @@ body { font-family: 'Apple SD Gothic Neo', Pretendard, system-ui, sans-serif; co
 .landing-features li { display: flex; gap: 12px; align-items: flex-start; }
 .lf-icon {
   flex: none; width: 40px; height: 40px; border-radius: 12px;
-  background: #f0fdfa; color: #0f766e; display: flex; align-items: center; justify-content: center;
+  background: #fff7ed; color: #c2410c; display: flex; align-items: center; justify-content: center;
 }
 .landing-features strong { font-size: 14.5px; }
 .landing-features p { font-size: 12.5px; color: #64748b; margin-top: 2px; line-height: 1.5; }
 .landing-cta {
   width: 100%; padding: 15px; border: 0; border-radius: 14px; cursor: pointer;
-  background: #0f766e; color: #fff; font-size: 16px; font-weight: 800;
+  background: #c2410c; color: #fff; font-size: 16px; font-weight: 800;
 }
 .landing-cta:hover { background: #115e59; }
 .landing-meta { margin-top: 16px; font-size: 12px; color: #475569; display: flex; flex-direction: column; gap: 3px; }
@@ -294,24 +294,24 @@ body { font-family: 'Apple SD Gothic Neo', Pretendard, system-ui, sans-serif; co
 /* 덱 카테고리 스텝 */
 .deck-steps { display: flex; gap: 6px; margin-bottom: 10px; }
 .deck-steps span { font-size: 11.5px; padding: 4px 10px; border-radius: 14px; background: #f1f5f9; color: #94a3b8; }
-.deck-steps .on { background: #0f766e; color: #fff; font-weight: 700; }
-.deck-steps .done { background: #ccfbf1; color: #0f766e; }
+.deck-steps .on { background: #c2410c; color: #fff; font-weight: 700; }
+.deck-steps .done { background: #ffedd5; color: #c2410c; }
 
 /* 출발지 선택 (DepartureSelector) */
 .dep-selector { padding: 12px 14px; border-top: 1px solid #e2e8f0; background: #fff; }
 .dep-selector-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
-.dep-selector-head strong { font-size: 13.5px; color: #0f766e; }
+.dep-selector-head strong { font-size: 13.5px; color: #c2410c; }
 .dep-hint { font-size: 11.5px; color: #94a3b8; }
 .dep-options { display: flex; flex-wrap: wrap; gap: 6px; }
 .dep-option {
   display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
-  border: 1px solid #99f6e4; background: #fff; color: #0f766e;
+  border: 1px solid #fed7aa; background: #fff; color: #c2410c;
   border-radius: 12px; padding: 8px 12px; cursor: pointer; min-height: 44px;
   text-align: left;
 }
-.dep-option:hover { background: #f0fdfa; }
-.dep-option.on { background: #0f766e; border-color: #0f766e; color: #fff; font-weight: 700; }
-.dep-option.myloc { border-style: dashed; border-color: #0d9488; }
+.dep-option:hover { background: #fff7ed; }
+.dep-option.on { background: #c2410c; border-color: #c2410c; color: #fff; font-weight: 700; }
+.dep-option.myloc { border-style: dashed; border-color: #ea580c; }
 .dep-option.myloc.on { border-style: solid; }
 .dep-option-name { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; }
 .dep-option-icon { font-size: 12px; }
@@ -334,3 +334,260 @@ body { font-family: 'Apple SD Gothic Neo', Pretendard, system-ui, sans-serif; co
 .dep-more { margin: 6px 0 0; border: 0; background: none; color: #6366f1;
   font-size: 12.5px; cursor: pointer; text-decoration: underline; padding: 4px; }
 .dep-more:hover { color: #4f46e5; }
+/* 경사 회피 옵션 */
+.slope-opt { margin-bottom: 10px; }
+.slope-toggle {
+  width: 100%; min-height: 48px; display: flex; flex-direction: column; gap: 1px;
+  align-items: flex-start; text-align: left; padding: 8px 12px; cursor: pointer;
+  border: 1px solid #cbd5e1; border-radius: 10px; background: #fff;
+}
+.slope-toggle:disabled { opacity: 0.6; cursor: progress; }
+.slope-toggle .st-title { font-size: 13px; font-weight: 700; color: #334155; }
+.slope-toggle .st-sub { font-size: 11.5px; color: #64748b; }
+.slope-toggle.on { background: #c2410c; border-color: #c2410c; }
+.slope-toggle.on .st-title, .slope-toggle.on .st-sub { color: #fff; }
+.slope-note { font-size: 11.5px; color: #64748b; margin-top: 6px; line-height: 1.45; }
+
+.slope-cmp { margin-top: 8px; border: 1px solid #e2e8f0; border-radius: 10px; padding: 8px 10px; background: #f8fafc; }
+.slope-cmp > strong { font-size: 12.5px; color: #c2410c; }
+.slope-cmp table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 12px; }
+.slope-cmp th, .slope-cmp td { padding: 3px 4px; text-align: right; font-weight: 400; color: #475569; }
+.slope-cmp tbody th { text-align: left; color: #64748b; }
+.slope-cmp thead th { font-size: 11px; color: #94a3b8; border-bottom: 1px solid #e2e8f0; }
+.slope-cmp td.better { color: #15803d; font-weight: 700; }
+.slope-cmp td.worse { color: #be123c; font-weight: 700; }
+.slope-cmp td.same { color: #64748b; }
+.cmp-note { font-size: 11px; color: #64748b; margin-top: 6px; line-height: 1.45; }
+.detour-tag {
+  font-size: 10.5px; font-weight: 700; color: #c2410c; background: #ffedd5;
+  border-radius: 8px; padding: 1px 6px; margin-left: 6px; flex: none;
+}
+
+/* 지도 경로선 표시 기준 전환 (난이도 ↔ 경사) */
+.map-modes {
+  position: absolute; top: 12px; right: 12px; z-index: 20;
+  display: flex; align-items: center; gap: 4px; padding: 4px 4px 4px 10px;
+  background: #fff; border: 1px solid #cbd5e1; border-radius: 999px;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 12%);
+}
+.map-modes .mm-label { font-size: 11.5px; font-weight: 700; color: #64748b; }
+.map-modes button {
+  min-height: 32px; padding: 5px 12px; font-size: 12.5px; cursor: pointer;
+  border: 0; border-radius: 999px; background: #f1f5f9; color: #334155;
+}
+.map-modes button.on { background: #c2410c; color: #fff; font-weight: 700; }
+.legend .line.unknown { background: #94a3b8; }
+
+/* 고도 프로파일 */
+.elev { margin: 4px 0 2px 22px; }
+.elev svg { width: 100%; height: 46px; display: block; }
+.elev-area { fill: #f1f5f9; stroke: none; }
+.elev-seg { stroke-width: 2.5; fill: none; stroke-linecap: round; }
+.elev-seg.easy { stroke: #60a5fa; }
+.elev-seg.mid { stroke: #f59e0b; }
+.elev-seg.hard { stroke: #ef4444; }
+.elev figcaption { font-size: 11px; color: #64748b; display: flex; flex-wrap: wrap; gap: 4px; }
+.elev figcaption b { color: #be123c; }
+.elev-res { margin-left: auto; color: #94a3b8; }
+
+/* ── 타이틀 페이지 (시연 오프닝, TitlePage.jsx) ─────────────── */
+.title-page {
+  min-height: 100vh; min-height: 100dvh; /* iOS 사파리 주소창 대비 dvh, 구형은 vh 폴백 */
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 32px 24px; background: #f8fafc; text-align: center;
+}
+.title-logo { display: flex; justify-content: center; margin-bottom: 20px; }
+.title-name { font-size: 34px; font-weight: 800; letter-spacing: -0.8px; color: #0f172a; }
+.title-slogan { margin-top: 12px; font-size: 16.5px; font-weight: 700; color: #c2410c; line-height: 1.55; }
+.title-desc { margin-top: 6px; font-size: 14px; color: #64748b; }
+.title-feats { list-style: none; padding: 0; margin: 24px 0 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.title-feat {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 36px;
+  font-size: 13px; font-weight: 600; color: #c2410c;
+  background: #fff7ed; border: 1px solid #fed7aa; border-radius: 20px; padding: 7px 13px;
+}
+.title-feat svg { color: #ea580c; flex: none; }
+.title-start {
+  margin-top: 30px; min-height: 56px; width: min(320px, 100%);
+  border: 0; border-radius: 14px; cursor: pointer;
+  background: #c2410c; color: #fff; font-size: 17px; font-weight: 700; font-family: inherit;
+  box-shadow: 0 2px 10px rgb(15 118 110 / .25);
+}
+.title-start:hover { background: #115e59; }
+.title-start:active { transform: translateY(1px); }
+.title-start:focus-visible { outline: 3px solid #fdba74; outline-offset: 2px; }
+
+/* ── 모바일 반응형 (시연 영상 녹화, ~390~430px) ─────────────── */
+@media (max-width: 480px) {
+  .title-name { font-size: 30px; }
+  .title-slogan { font-size: 15.5px; }
+  .title-start { width: 100%; }
+
+  /* 단계 인지형 레이아웃 (iOS 사파리 대비 dvh, 미지원은 vh 폴백)
+     - 온보딩(설문·출발지 입력·카드덱): 지도가 필요 없다 → 입력 흐름 풀스크린
+     - 지도 단계(코스 생성 후): 지도가 주인공 → 패널은 접었다 펴는 바텀시트 */
+  .layout {
+    height: 100vh; height: 100dvh;
+    grid-template: 'top' 48px 'map' 45vh 'side' 1fr / 1fr;
+    grid-template-rows: 48px 45dvh 1fr;
+  }
+
+  /* ── 온보딩 단계: 지도 숨김, 패널 풀스크린 ── */
+  .layout.phase-onboard {
+    grid-template: 'top' 48px 'side' 1fr / 1fr;
+    grid-template-rows: 48px 1fr;
+  }
+  .layout.phase-onboard .map-wrap {
+    /* display:none 대신 화면 밖 고정 — Tmap이 0크기로 초기화되는 것을 피한다 */
+    position: fixed; left: -200vw; top: 0; width: 100vw; height: 60vh; height: 60dvh;
+  }
+  .layout.phase-onboard .sheet-handle { display: none; }
+
+  /* ── 지도 단계: 지도 전면 + 바텀시트 ── */
+  .layout.phase-map {
+    grid-template: 'top' 48px 'map' 1fr / 1fr;
+    grid-template-rows: 48px 1fr;
+  }
+  .layout.phase-map .side {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+    background: #fff; border-radius: 16px 16px 0 0;
+    box-shadow: 0 -6px 24px rgb(15 23 42 / 18%);
+    transition: height 0.25s ease;
+    display: flex; flex-direction: column;
+  }
+  .layout.phase-map.sheet-open .side { height: 62vh; height: 62dvh; }
+  /* 접힘: 핸들 + 퀵바(핵심 토글)만 남기고 지도를 최대로 */
+  .layout.phase-map.sheet-closed .side { height: auto; overflow: hidden; }
+  .layout.phase-map.sheet-closed .side > :not(.sheet-handle):not(.route-quickbar) { display: none; }
+
+  /* 퀵바: 접힌 시트에서도 항상 조작 가능한 경로 옵션 (도보/대중교통·경사회피) */
+  .route-quickbar {
+    display: flex; gap: 6px; padding: 0 12px calc(10px + env(safe-area-inset-bottom));
+    flex: none;
+  }
+  .route-quickbar button {
+    flex: 1; min-height: 44px; border: 1px solid #cbd5e1; background: #fff; color: #334155;
+    border-radius: 10px; font-size: 12.5px; font-weight: 700; cursor: pointer; white-space: nowrap;
+  }
+  .route-quickbar button.on { background: #c2410c; border-color: #c2410c; color: #fff; }
+  .route-quickbar button.qb-slope.on { background: #1d4ed8; border-color: #1d4ed8; }
+  .route-quickbar button:disabled { opacity: .55; }
+
+  /* 퀵바가 같은 기능을 하므로 시트 내부의 기존 토글은 모바일에서 숨김 (중복 방지) */
+  .layout.phase-map .mode-toggle { display: none; }
+  .layout.phase-map .slope-opt .slope-toggle { display: none; }
+
+  /* 시트 핸들: 잡는 부분임이 보이게 그래버 + 요약 + 화살표 */
+  .sheet-handle {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    width: 100%; min-height: 56px; padding: 8px 16px calc(6px + env(safe-area-inset-bottom) * 0);
+    border: 0; background: none; cursor: pointer; flex: none;
+  }
+  .sheet-grabber { width: 44px; height: 5px; border-radius: 3px; background: #cbd5e1; }
+  .sheet-summary { font-size: 13.5px; font-weight: 700; color: #c2410c; }
+  .sheet-arrow { font-size: 11px; color: #94a3b8; margin-top: -2px; }
+
+  /* 탑바 컴팩트: 제목 + 요약 한 줄 (범례·페르소나 필 숨김) */
+  .topbar { gap: 8px; padding: 0 12px; }
+  .topbar h1 { font-size: 15.5px; flex: none; }
+  .topbar h1 svg { width: 20px; height: 20px; }
+  .topbar .sub { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topbar .legend, .topbar .persona-pill { display: none; }
+
+  /* 사이드: 전체 스크롤 — 채팅 입력은 sticky로 하단에서 안 잘리게 */
+  .side { min-height: 0; overflow-y: auto; }
+  .chat { flex: 1 0 auto; min-height: 230px; }
+  .chat-input {
+    position: sticky; bottom: 0; z-index: 5;
+    padding-bottom: calc(12px + env(safe-area-inset-bottom));
+  }
+  .steps { max-height: none; } /* 사이드 자체가 스크롤 — 글자 크기는 그대로 유지 */
+
+  /* 지도 필터: 줄바꿈 없이 가로 스크롤, 터치 타깃 44px 이상 */
+  .map-filters {
+    right: 12px; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch; scrollbar-width: none;
+  }
+  .map-filters::-webkit-scrollbar { display: none; }
+  .map-filters button { flex: none; white-space: nowrap; min-height: 44px; padding: 9px 13px; }
+
+  /* 경로선 모드 토글: 우상단 유지하되 필터 줄과 겹치지 않게 살짝 내리고 축소 */
+  .map-modes { top: 64px; right: 12px; padding: 3px 3px 3px 9px; }
+  .map-modes .mm-label { font-size: 11px; }
+  .map-modes button { min-height: 30px; padding: 4px 10px; font-size: 12px; }
+
+  /* 터치 타깃 44px 이상 유지 */
+  .chip, .mode-toggle button, .p-chip, .p-close, .dep-option { min-height: 44px; }
+}
+
+/* 바텀시트 핸들은 모바일 지도 단계 전용 — 데스크톱에선 숨김 */
+@media (min-width: 481px) {
+  .sheet-handle { display: none; }
+}
+
+/* 퀵바는 모바일 전용 — 데스크톱은 기존 mode-toggle + RouteSteps 경사 토글 사용 */
+@media (min-width: 481px) {
+  .route-quickbar { display: none; }
+}
+
+/* 경로 탐색 로딩 오버레이 — 화면 정중앙, 지도 조작은 막지 않는다 */
+.route-loading {
+  position: fixed; inset: 0; z-index: 95;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.rl-card {
+  display: flex; align-items: center; gap: 10px;
+  background: rgb(255 255 255 / 96%); border: 1px solid #e2e8f0;
+  border-radius: 14px; padding: 14px 18px;
+  box-shadow: 0 6px 24px rgb(15 23 42 / 16%);
+  font-size: 14px; font-weight: 700; color: #0f172a;
+}
+.rl-spinner {
+  width: 20px; height: 20px; border-radius: 50%; flex: none;
+  border: 3px solid #ffedd5; border-top-color: #c2410c;
+  animation: rlspin 0.8s linear infinite;
+}
+@keyframes rlspin { to { rotate: 360deg; } }
+
+/* 랜딩 슬로건 (팀 Landing 채택 + 브랜딩 정정) */
+.landing-slogan { font-size: 15px; font-weight: 700; color: #c2410c; margin: 2px 0 4px; }
+
+/* 시설 필터 개수 + 빈 결과 안내 + 카페 범례 */
+.map-filters .cnt { font-weight: 800; margin-left: 2px; opacity: .75; font-size: 11px; }
+.map-filters button.on .cnt { opacity: 1; }
+.dot.cafe { background: #b45309; }
+.filter-empty {
+  position: absolute; top: 62px; left: 12px; right: 12px; z-index: 19;
+  background: #fffbeb; border: 1px solid #fde68a; color: #92400e;
+  border-radius: 10px; padding: 9px 12px; font-size: 12.5px; line-height: 1.5;
+  box-shadow: 0 2px 8px rgb(15 23 42 / 10%);
+}
+@media (max-width: 480px) {
+  .filter-empty { top: 60px; }
+}
+
+
+/* 브랜드 워드마크 — 편해질(앰버) 지도(코랄) + 접힌 지도 아이콘 */
+.wordmark { display: inline-flex; align-items: center; gap: .28em; font-weight: 900; letter-spacing: -0.02em; line-height: 1; }
+.wordmark .wm-a { color: #f59e0b; }
+.wordmark .wm-b { color: #e2574b; }
+.wordmark svg { display: block; }
+
+/* 원본 로고 이미지 워드마크 정렬 */
+.landing-wordmark { display: flex; justify-content: center; margin-bottom: 4px; }
+.topbar .wordmark-img { margin: 0; }
+
+/* 범례: 점선 = 계단 가능성 (도보·대중교통 공통 기준) */
+.line.dashline { background: repeating-linear-gradient(90deg, #64748b 0 5px, transparent 5px 9px); }
+
+/* 경사회피 토글 결과 토스트 — 접힌 시트 위, 지도 하단 중앙 */
+.slope-toast {
+  position: absolute; left: 12px; right: 12px; bottom: 16px; z-index: 30;
+  background: rgb(30 41 59 / 92%); color: #fff; border-radius: 12px;
+  padding: 11px 14px; font-size: 12.5px; line-height: 1.5; font-weight: 600;
+  box-shadow: 0 4px 16px rgb(15 23 42 / 25%);
+}
+@media (max-width: 480px) {
+  .layout.phase-map .slope-toast { position: fixed; bottom: 140px; }
+}

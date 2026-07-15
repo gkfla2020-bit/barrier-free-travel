@@ -1,12 +1,36 @@
+import logoUrl from './assets/logo.png'
+
 // 이모지 대신 쓰는 미니 SVG 아이콘 세트 — 일관된 스트로크·컬러
+// 브랜드 팔레트: 편해질(앰버 #f5a04b) · 지도(코랄 #e2574b) · 접힌 지도 아이콘
+
+// 접힌 지도 — 로고 우측 아이콘 재현 (지그재그 3면, 앰버/코랄 교차)
+export function MapFold({ size = 22 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3.5 5.8 9 3.2v15.4l-5.5 2.6z" fill="#f6a04d" />
+      <path d="M9 3.2l6 2.6v15.4l-6-2.6z" fill="#e2574b" />
+      <path d="M15 5.8 20.5 3.2v15.4L15 21.2z" fill="#f6a04d" />
+    </svg>
+  )
+}
+
+// 워드마크 — 원본 손글씨 로고 PNG (720×201, 투명 배경).
+// size는 기존 폰트 크기 의미를 유지 — 이미지 높이로 환산해 호출부 변경 없이 동작.
+export function Wordmark({ size = 18 }) {
+  return (
+    <img className="wordmark-img" src={logoUrl} alt="편해질지도"
+         style={{ height: Math.round(size * 1.55), width: 'auto', display: 'block' }} />
+  )
+}
+
 export function Logo({ size = 26 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
-      <rect width="24" height="24" rx="7" fill="#0d9488" />
+      <rect width="24" height="24" rx="7" fill="#f6a04d" />
       <circle cx="12" cy="7.6" r="2.3" fill="#fff" />
       <path d="M6.5 17.5c.8-3.4 2.8-5.2 5.5-5.2s4.7 1.8 5.5 5.2"
             stroke="#fff" strokeWidth="2.1" fill="none" strokeLinecap="round" />
-      <circle cx="17.5" cy="17.5" r="1.4" fill="#5eead4" />
+      <circle cx="17.5" cy="17.5" r="1.4" fill="#e2574b" />
     </svg>
   )
 }

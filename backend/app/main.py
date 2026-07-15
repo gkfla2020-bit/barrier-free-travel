@@ -8,7 +8,7 @@ load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import chat, places, route
+from .routers import chat, onboard, places, route
 
 app = FastAPI(title="무장애 여행 API")
 app.add_middleware(CORSMiddleware, allow_origins=["*"],
@@ -16,6 +16,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"],
 app.include_router(places.router)
 app.include_router(route.router)
 app.include_router(chat.router)
+app.include_router(onboard.router)
 
 
 @app.get("/health")

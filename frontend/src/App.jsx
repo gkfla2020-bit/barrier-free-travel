@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import MapView from './MapView'
 import ChatPanel from './ChatPanel'
 import RouteSteps from './RouteSteps'
 import { PersonaSurvey, CardDeck } from './PersonaDeck'
 import Landing from './Landing'
-import { Logo, BadgeIcon } from './Icons'
-import { fetchAllPlaces, fetchPlaceDetail, postChat, postRoute, postRestroomCoverage, BADGE_LABELS } from './api'
+import { Logo, BadgeIcon, Wordmark } from './Icons'
+import { fetchAllPlaces, fetchPlaceDetail, postChat, postRoute, postRestroomCoverage, postOnboard, resolvePlace, BADGE_LABELS } from './api'
 import { validDepartures, recognizeDeparture } from './departures'
 import './App.css'
 
@@ -134,10 +134,17 @@ function optimizeOrder(items, center) {
   return order
 }
 
-// 경로 설명은 LLM이 아니라 Tmap 실데이터에서 생성 — 계단 수·거리·시간이 100% 사실
+const fmt = (m) => (m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${m}m`)
+
+// 경로 설명은 LLM이 아니라 Tmap·표고 실데이터에서 생성 — 계단 수·거리·경사가 100% 사실
 function routeSummary(r, course) {
+  // 픽스처(데모 경로)면 요청한 코스와 무관하다. 구간별 수치를 읊으면 전부 거짓말이 된다.
+  if (r.fallback) {
+    return '⚠️ 경로 서버에 연결하지 못해 실제 경로를 확인하지 못했어요.\n' +
+      '왼쪽에 표시된 건 미리 저장해둔 데모 경로(수원 화성)이며, 담으신 코스의 실제 ' +
+      '거리·계단·경사가 아닙니다. 잠시 후 다시 시도해주세요.'
+  }
   const mark = { 쉬움: '[쉬움]', 중간: '[중간]', 어려움: '[어려움]' }
-  const fmt = (m) => (m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${m}m`)
   const min = (s) => `${Math.max(1, Math.round(s / 60))}분`
   const legs = r.legs.map((l, i) => {
     const why = l.reasons?.length ? ` — ${l.reasons.join(', ')}` : ''
@@ -148,10 +155,37 @@ function routeSummary(r, course) {
     `이동 경로를 확인했어요. 총 도보 ${fmt(r.totalDistance)} · ${min(r.totalDuration)}\n` +
     `이동 난이도: ${r.difficulty}` +
     (r.reasons?.length ? ` (${r.reasons.join(' · ')})` : '')
+  // 경사를 모르는 이유가 둘이다. 경로 탐색 실패를 표고 탓으로 돌리면 진짜 원인을 가린다.
+  const slope = r.slope
+    ? `\n지형 경사: 최대 ${r.slope.maxGrade}% · 누적 오르막 ${r.slope.ascent}m` +
+      (r.slope.maxGrade >= 5 ? ' → 경사 회피를 켜면 더 완만한 길을 찾아볼게요.' : '')
+    : r.legs.some((l) => l.fallback)
+      ? '\n⚠️ 경로를 찾지 못해 직선으로 표시했어요 — 실제 보행로가 아니라 경사도 확인할 수 없습니다.'
+      : '\n지형 표고를 가져오지 못해 경사는 확인하지 못했어요.'
   const stairs = r.legs.some((l) => l.stairsPossible)
     ? '\n⚠️ 일부 구간에 계단이 있을 수 있어요. 왼쪽 경로 안내에서 우회 지점을 확인하세요.'
     : '\n✅ 전 구간 계단 회피 경로입니다.'
-  return `${head}\n${legs.join('\n')}${stairs}`
+  return `${head}\n${legs.join('\n')}${slope}${stairs}`
+}
+
+// 경사 회피 결과 보고 — 나빠진 것(늘어난 거리·난이도)도 숨기지 않는다.
+function slopeSummary(r, on) {
+  if (!on) return '경사 회피를 껐어요. 최단 경로로 되돌립니다.'
+  if (!r.slope) {
+    return r.legs.some((l) => l.fallback)
+      ? '경사 회피를 켰지만 경로 탐색이 안 돼 우회로를 찾지 못했어요. (표고가 아니라 경로 문제예요)'
+      : '경사 회피를 켰지만 지형 표고를 가져오지 못해 경사를 확인할 수 없었어요.'
+  }
+  if (!r.baseline) {
+    return r.slope.maxGrade < 5
+      ? `이미 완만한 경로예요 (최대 경사 ${r.slope.maxGrade}%). 우회 없이 그대로 갑니다.`
+      : '우회로를 찾아봤지만 거리만 늘고 경사는 나아지지 않아 원래 경로를 유지했어요.'
+  }
+  const b = r.baseline
+  return `경사 회피를 적용했어요 — ${b.detourLegs}개 구간을 우회합니다.\n` +
+    `최대 경사 ${b.maxGrade}% → ${r.slope.maxGrade}% · 급경사 ${fmt(b.steepDist)} → ${fmt(r.slope.steepDist)}\n` +
+    `대신 도보가 ${fmt(b.totalDistance)} → ${fmt(r.totalDistance)}로 늘어요. ` +
+    `난이도: ${b.difficulty} → ${r.difficulty}`
 }
 
 const GREETING = {
@@ -168,8 +202,7 @@ export default function App() {
   const [course, setCourse] = useState([])
   const [route, setRoute] = useState(null)
   const [loading, setLoading] = useState(false)
-  const [landing, setLanding] = useState(true) // 첫 화면 = 랜딩
-  const [survey, setSurvey] = useState(false) // 랜딩의 '시작하기' → 설문
+  const [survey, setSurvey] = useState(true) // 랜딩(stage) 통과 후 첫 화면 = 설문
   const [travelMode, setTravelMode] = useState('walk') // walk | transit
   const [deck, setDeck] = useState(null) // [{place, detail}] — 카드 스와이프 후보
   const [persona, setPersona] = useState(null) // {type, badges[], tastes[]}
@@ -177,17 +210,47 @@ export default function App() {
   const [region, setRegion] = useState(REGIONS[0]) // 현재 지역 (ready 지역만 진입)
   const [myLoc, setMyLoc] = useState(null) // 사용자가 허용한 실제 위치
   const [routeCourse, setRouteCourse] = useState([]) // 출발지 포함 경로용 코스
-  const [awaitRegion, setAwaitRegion] = useState(false) // 설문 직후: 채팅으로 지역 받기
+  const [awaitRegion, setAwaitRegion] = useState(false) // (폴백) 채팅으로 지역 받기
+  const [awaitOnboard, setAwaitOnboard] = useState(false) // 설문 직후: 출발지 한 번에 받기 (Haiku 매칭)
   const [awaitDeparture, setAwaitDeparture] = useState(false) // 지역 선택 후: 채팅으로 출발지 받기
+  // 사용자가 지역을 실제로 정한 적이 있나. false인데 검색어에서도 지역을 못 찾으면
+  // 조용히 기본값(서울)으로 떨어뜨리지 않고 되묻는다.
+  const [regionChosen, setRegionChosen] = useState(false)
   const [selectedDeparture, setSelectedDeparture] = useState(null) // 사용자가 고른 출발지 (Req 2.2)
   const [restrooms, setRestrooms] = useState([]) // 코스 장소별 화장실 커버리지 결과 (Req 7.1, 7.4, 7.5)
+  const [avoidSlope, setAvoidSlope] = useState(false) // 경사 회피 옵션
+  const [slopeBusy, setSlopeBusy] = useState(false) // 우회 재탐색 중
+  const [lineMode, setLineMode] = useState('difficulty') // 지도 경로선 색 기준: 난이도 | 경사
+  const [stage, setStage] = useState('title') // title | app — 타이틀 페이지에서 시작하기로 진입
+  const [sheetOpen, setSheetOpen] = useState(true) // 모바일 바텀시트 펼침 상태
+  const [routeBusy, setRouteBusy] = useState(null) // 경로 탐색 중 오버레이 문구 (null = 없음)
+  // 경사회피 토글 결과 토스트 — 시트가 접혀 있으면 채팅 설명이 안 보여서,
+  // "켰는데 지도가 안 변함 = 고장?"으로 오해된다. 결과를 지도 위에 잠깐 띄운다.
+  const [slopeNotice, setSlopeNotice] = useState(null)
+  const slopeNoticeTimer = useRef(null)
+  const showSlopeNotice = (text) => {
+    setSlopeNotice(text)
+    clearTimeout(slopeNoticeTimer.current)
+    slopeNoticeTimer.current = setTimeout(() => setSlopeNotice(null), 6000)
+  }
+  // 이 코스에 대중교통 경로가 없음이 확인됨 — 도보와 똑같은 경로가 점선으로만 바뀌는
+  // 혼란을 막기 위해 버튼을 비활성화한다. 코스가 바뀌면 다시 알 수 없으므로 리셋.
+  const [transitUnavailable, setTransitUnavailable] = useState(false)
+  // 온보딩 핸들러가 출발지 설정+경로 생성을 직접 처리하는 동안 selectedDeparture 이펙트를
+  // 건너뛰기 위한 플래그 (상태는 같은 배치에서 커밋돼 구분 불가 — ref여야 함)
+  const onboardRouting = useRef(false)
+  // 경로 요청 토큰 — 늦게 도착한 이전 요청의 응답이 최신 경로를 덮어쓰지 않게 한다
+  const routeReq = useRef(0)
 
   // 출발지 우선순위 (Req 2.2): 선택 출발지 > 내 위치(지역 안) > 유효 departures[0] > r.origin
   // 유효성 검증(validDepartures)을 통과한 출발지만 사용한다 (Req 1.6).
+  // 선택 출발지도 해당 지역 bbox 안일 때만 인정 — 지역 전환 직후 stale 클로저로
+  // 이전 지역 출발지(예: 서울 광화문)가 부산 코스의 출발점이 되는 사고를 막는다.
+  const inBbox = (p, r) => p && p.lat >= r.bbox[0] && p.lat <= r.bbox[1] &&
+    p.lng >= r.bbox[2] && p.lng <= r.bbox[3]
   const getOrigin = (r) => {
-    if (selectedDeparture) return selectedDeparture
-    if (myLoc && myLoc.lat >= r.bbox[0] && myLoc.lat <= r.bbox[1] &&
-        myLoc.lng >= r.bbox[2] && myLoc.lng <= r.bbox[3]) return myLoc
+    if (inBbox(selectedDeparture, r)) return selectedDeparture
+    if (inBbox(myLoc, r)) return myLoc
     const valid = validDepartures(r)
     return valid[0] || r.origin
   }
@@ -211,18 +274,73 @@ export default function App() {
     )
   }
 
+  // 경사 회피 토글 → 같은 코스를 다시 탐색. 실패하면 토글을 되돌린다 —
+  // 화면은 "회피 ON"인데 경로는 회피 전인 상태가 이 앱에서 가장 위험한 거짓말이다.
+  // 현재 이동 모드(도보/대중교통)를 유지한 채 재탐색한다.
+  const handleAvoidSlope = async (next) => {
+    const rc = routeCourse.length ? routeCourse : course
+    if (rc.length < 2) { setAvoidSlope(next); return }
+    setAvoidSlope(next)
+    setSlopeBusy(true)
+    try {
+      const r = await loadRoute(rc, travelMode, next)
+      setMessages((m) => [...m, { role: 'assistant', content: slopeSummary(r, next) }])
+      // 시트가 접혀 있어도 결과가 보이게 지도 위 토스트로 요약
+      if (!next) {
+        showSlopeNotice('경사 회피 껐어요 — 최단 경로로 안내합니다')
+      } else if (r.baseline) {
+        showSlopeNotice(`경사 회피 적용 — ${r.baseline.detourLegs}개 구간 우회 · ` +
+          `급경사 ${r.baseline.steepDist}m → ${r.slope.steepDist}m · ` +
+          `최대 ${r.baseline.maxGrade}% → ${r.slope.maxGrade}% (회색 점선 = 원래 경로)`)
+      } else {
+        showSlopeNotice('이 코스엔 더 완만한 우회로가 없어 원래 경로를 유지해요 ' +
+          '(가파른 구간이 진입로라 어느 길로도 피할 수 없음)')
+      }
+    } catch {
+      setAvoidSlope(!next)
+      setMessages((m) => [...m, { role: 'assistant', content: '⚠️ 경로를 다시 찾지 못했어요. 이전 경로를 유지합니다.' }])
+    } finally {
+      setSlopeBusy(false)
+    }
+  }
+
   const placeById = useMemo(
     () => Object.fromEntries(places.map((p) => [p.contentId, p])),
     [places],
   )
 
-  const loadRoute = async (resolved, mode = travelMode) => {
-    const r = await postRoute(
-      resolved.map((c) => ({ lat: c.place.lat, lng: c.place.lng, name: c.place.title })),
-      mode,
+  // 시설 필터 칩에 표시할 배지별 개수 — "적게 나오는 게 버그"라는 오해를 없앤다
+  const badgeCounts = useMemo(() => {
+    const c = {}
+    for (const p of places) for (const b of p.badges || []) c[b] = (c[b] || 0) + 1
+    return c
+  }, [places])
+
+  // 새 경로가 도착하면 모바일 시트를 접어 지도를 크게 보여준다.
+  // 요약·핵심 토글(도보/대중교통·경사회피)은 접힌 시트의 퀵바에 항상 노출된다.
+  useEffect(() => { if (route) setSheetOpen(false) }, [route])
+
+  // 코스가 바뀌면 대중교통 가용 여부는 다시 알 수 없다
+  useEffect(() => { setTransitUnavailable(false) }, [course])
+
+  const loadRoute = async (resolved, mode = travelMode, avoid = avoidSlope) => {
+    const token = ++routeReq.current
+    setRouteBusy(
+      mode === 'transit' ? '대중교통 경로를 검색하는 중입니다…'
+        : avoid ? '경사가 완만한 경로를 찾는 중입니다…'
+          : '도보 경로를 검색하는 중입니다…',
     )
-    setRoute(r)
-    return r
+    try {
+      const r = await postRoute(
+        resolved.map((c) => ({ lat: c.place.lat, lng: c.place.lng, name: c.place.title })),
+        mode, avoid,
+      )
+      // 더 최신 요청이 이미 나갔다면 이 응답은 버린다 (늦은 응답이 최신 경로를 덮어쓰는 레이스 방지)
+      if (token === routeReq.current) setRoute(r)
+      return r
+    } finally {
+      if (token === routeReq.current) setRouteBusy(null)
+    }
   }
 
   // 코스 장소별 화장실 커버리지 조회 (Req 7.1, 7.4, 7.5)
@@ -262,6 +380,16 @@ export default function App() {
     setLoading(true)
     try {
       const r = await loadRoute(target, mode)
+      // 대중교통을 요청했는데 실제 탑승 구간이 하나도 없으면(전 구간 도보 권장 거리
+      // 또는 노선 없음) 도보 모드를 유지하고 버튼을 비활성화한다 — 도보와 똑같은
+      // 경로가 '대중교통'으로 표시되는 혼란 방지.
+      if (mode === 'transit' && r.legs.every((l) => l.mode !== 'transit')) {
+        setTransitUnavailable(true)
+        setMessages((m) => [...m, { role: 'assistant', content:
+          '이 코스에는 이용할 만한 대중교통이 없어요. 구간이 짧아 도보가 더 빠르거나 ' +
+          '탑승 가능한 노선을 찾지 못했습니다 — 도보 경로로 계속 안내할게요.' }])
+        return
+      }
       // 재계산이 성공한 뒤에만 모드를 전환해 UI 모드가 실제 표시 경로와 일치하도록 한다.
       setTravelMode(mode)
       setMessages((m) => [...m, { role: 'assistant', content: routeSummary(r, target) }])
@@ -284,11 +412,18 @@ export default function App() {
   // selectedDeparture에만 의존하므로 내부에서 상태를 바꿔도 무한 루프가 생기지 않는다.
   useEffect(() => {
     if (!selectedDeparture) return
+    // 온보딩 핸들러가 이 출발지로 경로 생성까지 직접 처리 중이면 건너뛴다 (이중 계산 방지)
+    if (onboardRouting.current) { onboardRouting.current = false; return }
     // 출발지를 제외한 코스 장소 목록 확보 (routeCourse[0]은 __origin)
     const coursePlaces = routeCourse.length >= 2 ? routeCourse.slice(1) : course
     if (coursePlaces.length < 1) return // 코스가 없으면 재계산하지 않음
 
     const eff = selectedDeparture
+    // 이미 같은 출발지로 경로가 구성돼 있으면 재계산하지 않는다
+    // (온보딩에서 출발지 설정과 경로 생성을 한 번에 처리한 경우의 중복 방지)
+    const cur = routeCourse[0]?.place
+    if (cur && cur.contentId === '__origin' && cur.lat === eff.lat && cur.lng === eff.lng) return
+
     const rc = [
       { place: { contentId: '__origin', title: eff.name, lat: eff.lat, lng: eff.lng, type: 0, badges: [] } },
       ...coursePlaces,
@@ -312,6 +447,7 @@ export default function App() {
   // 지역 전환: 코스·경로·선택 출발지 초기화 + 지도는 MapView가 center prop으로 이동 (Req 2.7)
   const switchRegion = (r) => {
     setRegion(r)
+    setRegionChosen(true) // ready 지역으로의 전환은 곧 사용자가 지역을 정한 것
     setCourse([])
     setRoute(null)
     setRouteCourse([])
@@ -322,11 +458,88 @@ export default function App() {
   const handleSend = async (text) => {
     setMessages((m) => [...m, { role: 'user', content: text }])
 
-    // 온보딩 1단계: 지역명을 채팅으로 받는다. 인식되면 출발지 질문 단계로 넘어간다.
+    // 온보딩 0단계: 출발지를 한 번에 받는다 — 백엔드 Haiku가 오타·유사어까지 매칭해
+    // (예: "재주"→제주) 출발지 기반 프리셋 코스를 바로 만들어준다.
+    if (awaitOnboard) {
+      setLoading(true)
+      // catch 범위는 온보딩 매칭(postOnboard) 실패만 — 매칭 성공 후의 장소/경로 조회
+      // 실패는 '온보딩 실패'가 아니므로 확정된 지역·출발지 상태를 되돌리지 않는다.
+      let res
+      try {
+        res = await postOnboard(text)
+      } catch {
+        // 온보딩 백엔드 실패 → 기존 지역 질문 흐름으로 폴백 (앱은 계속 동작)
+        setLoading(false)
+        setAwaitOnboard(false)
+        setAwaitRegion(true)
+        setMessages((m) => [...m, { role: 'assistant', content:
+          `일시적인 문제로 기본 방식으로 진행할게요. 어느 지역으로 가시나요? (${readyNames()})` }])
+        return
+      }
+      try {
+        if (res.matched && res.departure) {
+          setAwaitOnboard(false)
+          const rgn = REGIONS.find((r) => r.id === res.departure.region && r.ready) || region
+          if (rgn.id !== region.id) switchRegion(rgn)
+          setRegionChosen(true)
+          const dep = { name: res.departure.name, lat: res.departure.lat, lng: res.departure.lng }
+          onboardRouting.current = true // 아래에서 경로 생성까지 직접 하므로 이펙트 중복 계산 방지
+          setSelectedDeparture(dep)
+          setMessages((m) => [...m, { role: 'assistant', content: res.reply }])
+
+          // 프리셋 코스가 오면 바로 지도에 렌더 + 경로까지 — 실패해도 온보딩 상태는 유지
+          try {
+            const preset = (res.course || []).sort((a, b) => a.order - b.order)
+            if (preset.length >= 2) {
+              const pool = Object.fromEntries((await fetchAllPlaces(rgn.bbox)).map((p) => [p.contentId, p]))
+              const resolved = preset.map((c) => ({ ...c, place: pool[c.contentId] })).filter((c) => c.place)
+              if (resolved.length >= 2) {
+                setCourse(resolved)
+                loadRestrooms(resolved)
+                const rc = [{ place: { contentId: '__origin', title: dep.name, lat: dep.lat, lng: dep.lng, type: 0, badges: [] } }, ...resolved]
+                setRouteCourse(rc)
+                const r = await loadRoute(rc)
+                setMessages((m) => [...m, { role: 'assistant', content: routeSummary(r, rc), course: resolved }])
+                return
+              }
+            }
+            // 프리셋이 부족하면 기존 카드덱 흐름으로
+            setMessages((m) => [...m, { role: 'assistant', content: '조건에 맞는 후보를 직접 골라볼게요!' }])
+            buildDeck(persona, rgn)
+          } catch {
+            setMessages((m) => [...m, { role: 'assistant', content:
+              '⚠️ 경로를 계산하지 못했어요. 잠시 후 다시 시도하거나 원하는 장소를 말씀해주세요.' }])
+          }
+          return
+        }
+        if (res.region) {
+          // 지역만 인식 → 그 지역 출발지를 물어본다
+          const rgn = REGIONS.find((r) => r.id === res.region && r.ready)
+          if (rgn) {
+            setAwaitOnboard(false)
+            setRegionChosen(true)
+            if (rgn.id !== region.id) switchRegion(rgn)
+            setAwaitDeparture(true)
+            const names = validDepartures(rgn).map((d) => d.name).join(', ')
+            setMessages((m) => [...m, { role: 'assistant', content:
+              `${rgn.name}(으)로 떠나볼게요! 어디서 출발하실래요? 예: ${names}` }])
+            return
+          }
+        }
+        setMessages((m) => [...m, { role: 'assistant', content:
+          res.reply || '출발지를 못 알아들었어요. 예) 광화문, 해운대역, 팔달문처럼 말씀해주세요.' }])
+        return
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    // 온보딩 1단계(폴백): 지역명을 채팅으로 받는다. 인식되면 출발지 질문 단계로 넘어간다.
     if (awaitRegion) {
       const r = detectRegion(text)
       if (r?.ready) {
         setAwaitRegion(false)
+        setRegionChosen(true)
         if (r.id !== region.id) switchRegion(r)
         setAwaitDeparture(true)
         const names = validDepartures(r).map((d) => d.name).join(', ')
@@ -356,6 +569,7 @@ export default function App() {
       const rec = recognizeDeparture(text, region)
       if (rec.status === 'single') {
         setAwaitDeparture(false)
+        setRegionChosen(true) // 같은 지역에서 출발지만 정한 경우에도 지역 확정으로 취급
         setSelectedDeparture(rec.matches[0])
         setMessages((m) => [...m, { role: 'assistant', content:
           `출발지를 '${rec.matches[0].name}'(으)로 정했어요! 조건에 맞는 후보를 고르고 있어요…` }])
@@ -374,6 +588,7 @@ export default function App() {
       // 건너뛰기 지원
       if (/건너|스킵|skip|아무|모르/i.test(text)) {
         setAwaitDeparture(false)
+        setRegionChosen(true)
         setMessages((m) => [...m, { role: 'assistant', content: `${region.origin.name} 출발 기준으로 진행할게요!` }])
         buildDeck(persona, region)
       }
@@ -390,11 +605,31 @@ export default function App() {
       }])
       return
     }
-    const active = detected && detected.id !== region.id ? detected : region
+
+    // 키워드 목록(REGIONS.keywords)은 지역당 3~7개뿐이라 "남산"·"동백섬"처럼
+    // 목록에 없는 장소명은 못 잡는다. 그때는 백엔드가 전 지역 장소명으로 찾아본다.
+    let active = detected || region
+    if (!detected) {
+      const hit = await resolvePlace(text, region.id).catch(() => null)
+      const byAnchor = hit?.anchor && REGIONS.find((r) => r.id === hit.region && r.ready)
+      if (byAnchor) {
+        active = byAnchor
+      } else if (!regionChosen) {
+        // 지역을 정한 적도 없고 검색어에서도 못 찾았다 → 서울로 떨어뜨리면 뭘 물어도
+        // 광화문 코스가 나온다. 모르면 모른다고 하고 되묻는다.
+        setMessages((m) => [...m, {
+          role: 'assistant',
+          content: '어느 지역인지 알 수 없어 아직 코스를 만들지 못했어요. 지역을 알려주시면 바로 찾아드릴게요!',
+          regions: REGIONS.filter((r) => r.ready),
+        }])
+        return
+      }
+    }
     if (active.id !== region.id) {
       switchRegion(active)
       setMessages((m) => [...m, { role: 'assistant', content: `${active.name}(으)로 안내할게요!` }])
     }
+    setRegionChosen(true)
 
     // 채팅 기반 출발지 인식 (Req 3, 4) — 지역 전환 후 활성 지역 기준으로 인식한다.
     const rec = recognizeDeparture(text, active)
@@ -425,6 +660,12 @@ export default function App() {
         ? `${text}\n(여행자 정보: ${persona.type} / 필수 시설: ${persona.badges.map((b) => BADGE_LABELS[b]).join(', ') || '없음'}${persona.tastes.length ? ` / 취향: ${persona.tastes.join(', ')}` : ''})`
         : text
       const res = await postChat(apiMsg, active.id)
+      // 백엔드가 실제로 쓴 지역을 따른다 (LLM 실패 시 데모 픽스처는 서울 코스라 서울로 온다)
+      const used = REGIONS.find((r) => r.id === res.region) || active
+      if (used.id !== active.id) {
+        switchRegion(used)
+        active = used
+      }
       const pool = active.id === region.id && places.length
         ? placeById
         : Object.fromEntries((await fetchAllPlaces(active.bbox)).map((p) => [p.contentId, p]))
@@ -435,6 +676,19 @@ export default function App() {
       setCourse(resolved)
       if (resolved.length) loadRestrooms(resolved)
       else setRestrooms([])
+      // 폴백이면 폴백이라고 밝힌다 — 이걸 안 밝혀서 "뭘 검색해도 광화문"으로 보였다
+      if (res.fallback) {
+        setMessages((m) => [...m, {
+          role: 'assistant',
+          content: '⚠️ AI 추천이 응답하지 않아 미리 저장해둔 데모 코스(서울 광화문)를 보여드려요. 검색하신 내용이 반영된 결과가 아닙니다.',
+        }])
+      } else if (res.anchor) {
+        // 느슨하게 매칭하므로 기준을 밝혀 오인식을 사용자가 잡을 수 있게 한다
+        setMessages((m) => [...m, {
+          role: 'assistant',
+          content: `'${res.anchor.title}' 주변을 기준으로 후보를 골랐어요. 다른 곳을 찾으시면 장소 이름을 더 정확히 알려주세요.`,
+        }])
+      }
       setMessages((m) => [...m, { role: 'assistant', content: res.reply, course: resolved.length ? resolved : undefined }])
 
       if (resolved.length >= 2) {
@@ -451,14 +705,17 @@ export default function App() {
     }
   }
 
-  // 설문(스펙 1단계) 완료 → 채팅에서 지역 질문 (지역 선택 후 후보 필터로 진행)
+  // 설문(스펙 1단계) 완료 → 첫 질문은 '출발지' 하나로 통일.
+  // 출발지만 말하면 Haiku 매칭 → 지역 전환 + 프리셋 코스까지 한 번에 이어진다.
   const handleSurvey = (p) => {
     setSurvey(false)
     setPersona(p)
-    setAwaitRegion(true)
+    setAwaitOnboard(true)
     setMessages((m) => [...m, {
       role: 'assistant',
-      content: `${p.type} 조건 확인했어요. 어디로 떠나실까요? 지역 이름을 채팅으로 말씀해주세요.\n예: 서울, 경주, 부산, 전주, 강릉, 여수, 제주, 수원, 인천, 대구`,
+      content: `${p.type} 조건 확인했어요. 어디서 출발하세요?\n` +
+        `출발지 이름만 말씀하시면 코스까지 바로 준비해드릴게요.\n` +
+        `예) 광화문 · 해운대역 · 팔달문 · 제주버스터미널 (지역 이름만 말씀하셔도 돼요)`,
     }])
   }
 
@@ -469,6 +726,7 @@ export default function App() {
       return
     }
     if (r.id !== region.id) switchRegion(r)
+    setRegionChosen(true) // 같은 지역 칩을 다시 눌러도 '지역 확정'으로 취급
     // 지역 선택 후 출발지를 채팅으로 묻는다 (온보딩 흐름 통일)
     setAwaitRegion(false)
     setAwaitDeparture(true)
@@ -561,11 +819,31 @@ export default function App() {
     }
   }
 
+  // 랜딩(타이틀) — 시연 영상 오프닝. 시작하기를 누르면 설문(온보딩)으로 진입한다.
+  // 팀에서 만든 Landing 컴포넌트를 채택 (기존 TitlePage는 제거).
+  if (stage === 'title') {
+    return <Landing onStart={() => setStage('app')} />
+  }
+
+  // 모바일 레이아웃 단계: 온보딩(설문·출발지/지역 입력·카드덱) 동안은 지도가 필요 없다 —
+  // 입력 흐름을 풀스크린으로. 코스가 만들어지면 지도가 주인공이 되고 패널은 바텀시트로.
+  const onboarding = survey || deck || awaitOnboard || awaitRegion || awaitDeparture
+  const sheetSummary = route
+    ? `도보 ${fmt(route.totalDistance)} · ${Math.max(1, Math.round(route.totalDuration / 60))}분 · ${route.difficulty}`
+    : course.length ? '코스 준비 중…' : '채팅'
+
   return (
-    <div className="layout">
-      {landing && <Landing onStart={() => { setLanding(false); setSurvey(true) }} />}
+    <div className={`layout ${onboarding ? 'phase-onboard' : 'phase-map'} ${sheetOpen ? 'sheet-open' : 'sheet-closed'}`}>
+      {routeBusy && (
+        <div className="route-loading" role="status" aria-live="polite">
+          <div className="rl-card">
+            <span className="rl-spinner" aria-hidden="true" />
+            <span>{routeBusy}</span>
+          </div>
+        </div>
+      )}
       <header className="topbar">
-        <h1><Logo /> 편해질지도</h1>
+        <h1><Wordmark size={17} /></h1>
         <span className="sub">무장애 관광지 {places.length}곳 · 계단 회피 경로 · AI 코스 추천</span>
         {persona && (
           <button className="persona-pill" onClick={() => setSurvey(true)}
@@ -573,12 +851,50 @@ export default function App() {
             {persona.type} · 필수 {persona.badges.length}개 · 수정
           </button>
         )}
+        {/* 경로선 색은 모드마다 뜻이 다르다 — 범례가 같이 안 바뀌면 같은 색이 거짓말을 한다 */}
         <span className="legend">
-          <i className="dot tour" /> 관광지 <i className="dot food" /> 음식점
-          <i className="line easy" /> 쉬움 <i className="line mid" /> 중간 <i className="line hard" /> 어려움
+          <i className="dot tour" /> 관광지 <i className="dot food" /> 음식점 <i className="dot cafe" /> 카페
+          {lineMode === 'slope' ? (
+            <>
+              <i className="line easy" /> 경사 5%↓ <i className="line mid" /> 5~8.3%
+              <i className="line hard" /> 8.3%↑ <i className="line unknown" /> 모름
+            </>
+          ) : (
+            <>
+              <i className="line easy" /> 쉬움 <i className="line mid" /> 중간 <i className="line hard" /> 어려움
+              {' '}<i className="line dashline" /> 계단 가능
+            </>
+          )}
         </span>
       </header>
       <aside className="side">
+        {/* 모바일 바텀시트 핸들 — 코스가 생긴 뒤(지도 단계)에만 CSS로 노출 */}
+        <button className="sheet-handle" type="button"
+                aria-expanded={sheetOpen}
+                aria-label={sheetOpen ? '패널 접기' : '패널 펼치기'}
+                onClick={() => setSheetOpen((o) => !o)}>
+          <span className="sheet-grabber" aria-hidden="true" />
+          <span className="sheet-summary">{sheetSummary}</span>
+          <span className="sheet-arrow" aria-hidden="true">{sheetOpen ? '▾' : '▴'}</span>
+        </button>
+        {/* 모바일 퀵바 — 시트가 접혀 있어도 핵심 경로 옵션은 바로 조작 가능 */}
+        {route && (routeCourse.length || course.length) >= 2 && (
+          <div className="route-quickbar" role="group" aria-label="경로 옵션">
+            <button className={travelMode === 'walk' ? 'on' : ''} disabled={loading}
+                    onClick={() => switchMode('walk')}>도보</button>
+            <button className={travelMode === 'transit' ? 'on' : ''}
+                    disabled={loading || transitUnavailable}
+                    title={transitUnavailable ? '이 코스에는 이용 가능한 대중교통이 없어요' : undefined}
+                    onClick={() => switchMode('transit')}>
+              {transitUnavailable ? '대중교통 없음' : '대중교통'}
+            </button>
+            <button className={`qb-slope ${avoidSlope ? 'on' : ''}`} disabled={slopeBusy}
+                    aria-pressed={avoidSlope}
+                    onClick={() => handleAvoidSlope(!avoidSlope)}>
+              {slopeBusy ? '경사회피 적용 중…' : `경사회피 ${avoidSlope ? 'ON' : 'OFF'}`}
+            </button>
+          </div>
+        )}
         {survey && <PersonaSurvey onSubmit={handleSurvey} onClose={() => setSurvey(false)} />}
         {deck && <CardDeck groups={deck} onDone={handleDeckDone} onClose={() => setDeck(null)} />}
         {!survey && !deck && (
@@ -592,28 +908,57 @@ export default function App() {
                 <button className={travelMode === 'walk' ? 'on' : ''}
                         onClick={() => switchMode('walk')} disabled={loading}>도보만</button>
                 <button className={travelMode === 'transit' ? 'on' : ''}
-                        onClick={() => switchMode('transit')} disabled={loading}>대중교통 포함</button>
+                        onClick={() => switchMode('transit')}
+                        disabled={loading || transitUnavailable}
+                        title={transitUnavailable ? '이 코스에는 이용 가능한 대중교통이 없어요' : undefined}>
+                  {transitUnavailable ? '대중교통 없음' : '대중교통 포함'}
+                </button>
               </div>
             )}
-            <RouteSteps route={route} course={routeCourse.length ? routeCourse : course} restrooms={restrooms} />
+            <RouteSteps route={route} course={routeCourse.length ? routeCourse : course} restrooms={restrooms}
+                        avoidSlope={avoidSlope} onAvoidSlope={handleAvoidSlope} slopeBusy={slopeBusy} />
           </>
         )}
       </aside>
       <main className="map-wrap">
         <div className="map-filters" role="group" aria-label="시설 필터">
-          <button className={!mapFilter ? 'on' : ''} onClick={() => setMapFilter(null)}>전체</button>
+          <button className={!mapFilter ? 'on' : ''} onClick={() => setMapFilter(null)}>
+            전체 <b className="cnt">{places.length}</b>
+          </button>
           {['wheelchair', 'toilet', 'parking', 'elevator'].map((b) => (
             <button key={b} className={mapFilter === b ? 'on' : ''}
                     onClick={() => setMapFilter(mapFilter === b ? null : b)}>
-              <BadgeIcon badge={b} /> {BADGE_LABELS[b]}
+              <BadgeIcon badge={b} /> {BADGE_LABELS[b]} <b className="cnt">{badgeCounts[b] || 0}</b>
             </button>
           ))}
           <button className={myLoc ? 'on' : ''} onClick={locateMe}>내 위치 출발</button>
         </div>
+        {slopeNotice && (
+          <div className="slope-toast" role="status" aria-live="polite">{slopeNotice}</div>
+        )}
+        {/* 배지는 실사 원문에서 확실히 확인된 곳에만 단다 — 적은 건 버그가 아니라 데이터의 정직함 */}
+        {mapFilter && (badgeCounts[mapFilter] || 0) === 0 && (
+          <div className="filter-empty" role="status">
+            이 지역에서 '{BADGE_LABELS[mapFilter]}'이(가) 확인된 곳이 아직 없어요.
+            확실히 검증된 곳에만 배지를 답니다.
+          </div>
+        )}
+        {route && (
+          <div className="map-modes" role="group" aria-label="경로선 표시 기준">
+            <span className="mm-label">경로선</span>
+            {[['difficulty', '난이도'], ['slope', '경사']].map(([m, label]) => (
+              <button key={m} className={lineMode === m ? 'on' : ''}
+                      aria-pressed={lineMode === m} onClick={() => setLineMode(m)}>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         <MapView
           places={mapFilter ? places.filter((p) => p.badges.includes(mapFilter)) : places}
           course={course} route={route} center={region.center}
-          origin={route ? getOrigin(region) : null}
+          origin={route ? getOrigin(region) : null} lineMode={lineMode}
+          hidden={onboarding} activeFilter={mapFilter}
           restrooms={restrooms
             .map((it) => it.restroom)
             .filter((r) => r && !r.isSelf)} />
