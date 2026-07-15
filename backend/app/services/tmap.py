@@ -62,6 +62,9 @@ def _difficulty(distance: int, c: dict) -> tuple[str, list[str]]:
 CROSSWALKS = set(range(211, 218))          # 횡단보도 계열 turnType
 BRIDGE_TURNS = {125: "육교", 126: "지하보도"}
 BRIDGE_FACILITY = {"12", "14", "18"}       # LineString facilityType: 육교/지하보도/지하철지하보도
+# 계단은 turnType(127/129)이 아니라 LineString facilityType 17로 온다 — 실측 확인:
+# 명동→남산 옵션0 경로의 fac 17이 옵션30에서 완전히 사라짐 (17=계단 확정)
+STAIRS_FACILITY = "17"
 
 
 def _parse(data: dict, stairs_forced: bool) -> dict:
@@ -77,8 +80,12 @@ def _parse(data: dict, stairs_forced: bool) -> dict:
         if geom["type"] == "LineString":
             # Tmap은 [경도, 위도] 순서 → [lat, lng]로 뒤집는다
             polyline.extend([[c[1], c[0]] for c in geom["coordinates"]])
-            if str(props.get("facilityType", "")) in BRIDGE_FACILITY:
+            fac = str(props.get("facilityType", ""))
+            if fac in BRIDGE_FACILITY:
                 facility_bridge += 1
+            elif fac == STAIRS_FACILITY:
+                stairs = True
+                counts["stairs"] += 1
         elif geom["type"] == "Point":
             turn = props.get("turnType")
             desc = (props.get("description") or "").strip()
@@ -105,6 +112,8 @@ def _parse(data: dict, stairs_forced: bool) -> dict:
 
     # 안내점에 안 잡히고 구간 시설물로만 잡히는 육교/지하보도 보완 (중복 방지 위해 max)
     counts["bridge"] = max(counts["bridge"], facility_bridge)
+    if counts["stairs"] and stairs_forced:  # 계단회피 실패 폴백 경로에만 등장 가능
+        guides.insert(0, f"⚠️ 이 구간은 계단 {counts['stairs']}곳을 지납니다 (우회 경로를 찾지 못함)")
 
     level, reasons = _difficulty(distance, counts)
     if counts["elevator"]:
@@ -150,8 +159,42 @@ def _leg(start: dict, end: dict) -> dict:
             "difficulty": "어려움", "reasons": ["경로 확인 불가"]}
 
 
+def segment_failure_message(a: dict, b: dict) -> str:
+    """완전 실패(직선 폴백) 구간을 사람이 읽을 수 있게 식별한다 (Req 9.3).
+
+    두 경유지 사이 경로를 전혀 만들지 못한 경우, 어느 구간(출발지→도착지)이
+    라우팅되지 못했는지 이름으로 알려주는 안내 문구를 만든다."""
+    fa = (a.get("name") or "").strip() or "출발지"
+    fb = (b.get("name") or "").strip() or "도착지"
+    return f"'{fa}' → '{fb}' 구간의 경로를 찾지 못했습니다 (직선으로 표시)"
+
+
+def mark_unrouted(leg: dict, a: dict, b: dict) -> None:
+    """완전 실패 leg에 실패 구간 식별 메시지를 안내·사유 앞에 추가한다 (Req 9.3).
+
+    호출부는 캐시 오염을 막기 위해 leg의 guides/reasons를 복사한 뒤 전달해야 한다.
+    중복 삽입은 방지한다."""
+    msg = segment_failure_message(a, b)
+    guides = leg.setdefault("guides", [])
+    if msg not in guides:
+        guides.insert(0, msg)
+    reasons = leg.setdefault("reasons", [])
+    if msg not in reasons:
+        reasons.insert(0, msg)
+
+
 def route(waypoints: list[dict]) -> dict:
-    legs = [_leg(waypoints[i], waypoints[i + 1]) for i in range(len(waypoints) - 1)]
+    # 개별 외부 호출은 모두 타임아웃이 걸려 있어 응답 시간이 경계지어진다(Req 9.1):
+    # Tmap 보행자 호출은 _leg에서 httpx timeout=5.0(opt 30→0)로 제한된다.
+    legs = []
+    for a, b in zip(waypoints, waypoints[1:]):
+        leg = _leg(a, b)
+        if leg.get("fallback"):
+            # 완전 실패 구간 — 캐시 원본을 오염시키지 않도록 복사 후 식별 메시지 추가
+            leg = {**leg, "guides": list(leg.get("guides", [])),
+                   "reasons": list(leg.get("reasons", []))}
+            mark_unrouted(leg, a, b)
+        legs.append(leg)
 
     # 전 구간 실패 + 데모 픽스처 존재 → 픽스처 반환 (발표장 네트워크 사망 대비)
     if all(l["fallback"] for l in legs) and FIXTURE.exists():

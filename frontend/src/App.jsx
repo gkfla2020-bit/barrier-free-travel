@@ -4,53 +4,111 @@ import ChatPanel from './ChatPanel'
 import RouteSteps from './RouteSteps'
 import { PersonaSurvey, CardDeck } from './PersonaDeck'
 import { Logo, BadgeIcon } from './Icons'
-import { fetchAllPlaces, fetchPlaceDetail, postChat, postRoute, BADGE_LABELS } from './api'
+import { fetchAllPlaces, fetchPlaceDetail, postChat, postRoute, postRestroomCoverage, BADGE_LABELS } from './api'
+import { validDepartures, recognizeDeparture } from './departures'
 import './App.css'
 
 // 지역 레지스트리 — ready 지역은 실데이터(덤프) 서빙, 나머지는 답정너 안내 후 전환 유도.
 // 채팅에서 keywords가 감지되면 해당 지역으로 자동 연결된다.
+// 각 지역은 정확히 2개의 고정 출발지(departures)를 가진다 (10개 지역 × 2 = 20개).
+// type ∈ {지하철역, 버스터미널, 주차장}. 지하철 운행 지역(서울·부산·대구·인천·수원)은 ≥1 지하철역.
+// 지하철 미운행 지역(경주·전주·강릉·여수·제주)은 버스터미널/주차장만 사용
+// (강릉역·여수엑스포역은 KTX 철도 터미널이지만 도시철도가 아니므로 고정 enum상 '버스터미널'로 표기).
+// 모든 좌표는 해당 지역 bbox 내부에 위치한다.
+// origin getter는 departures[0]을 가리켜 기존 호출부(getOrigin, r.origin)와 하위 호환을 유지한다.
 const REGIONS = [
   { id: 'seoul', name: '서울 · 경복궁 일대', ready: true,
     center: { lat: 37.5788, lng: 126.977 }, bbox: [37.4, 37.7, 126.8, 127.2],
-    origin: { name: '광화문역', lat: 37.5717, lng: 126.9769 },
+    departures: [
+      { name: '광화문역', lat: 37.5717, lng: 126.9769, type: '지하철역', aliases: ['광화문'] },
+      { name: '서울역', lat: 37.5547, lng: 126.9706, type: '지하철역', aliases: ['서울역'] },
+      { name: '시청역', lat: 37.5657, lng: 126.9769, type: '지하철역', aliases: ['시청', '서울시청'] },
+      { name: '종로3가역', lat: 37.5714, lng: 126.9917, type: '지하철역', aliases: ['종로', '종로3가'] },
+    ],
+    get origin() { return this.departures[0] },
     keywords: ['서울', '경복궁', '광화문', '종로', '북촌', '덕수궁', '인사동'] },
   { id: 'gyeongju', name: '경주 · 대릉원', ready: true,
     center: { lat: 35.837, lng: 129.216 }, bbox: [35.65, 36.05, 129.0, 129.45],
-    origin: { name: '경주시외버스터미널', lat: 35.8419, lng: 129.2089 },
+    departures: [
+      { name: '경주시외버스터미널', lat: 35.8419, lng: 129.2089, type: '버스터미널', aliases: ['경주터미널', '시외버스터미널'] },
+      { name: '대릉원 공영주차장', lat: 35.8365, lng: 129.2095, type: '주차장', aliases: ['대릉원'] },
+      { name: '경주고속버스터미널', lat: 35.8442, lng: 129.2095, type: '버스터미널', aliases: ['고속버스터미널'] },
+    ],
+    get origin() { return this.departures[0] },
     keywords: ['경주', '대릉원', '첨성대', '불국사', '황리단길', '동궁'] },
   { id: 'busan', name: '부산 · 해운대', ready: true,
     center: { lat: 35.1587, lng: 129.1604 }, bbox: [35.05, 35.28, 129.05, 129.30],
-    origin: { name: '해운대역', lat: 35.1637, lng: 129.1586 },
+    departures: [
+      { name: '해운대역', lat: 35.1637, lng: 129.1586, type: '지하철역', aliases: ['해운대'] },
+      { name: '센텀시티역', lat: 35.1691, lng: 129.1305, type: '지하철역', aliases: ['센텀', '센텀시티'] },
+      { name: '벡스코역', lat: 35.1690, lng: 129.1349, type: '지하철역', aliases: ['벡스코'] },
+    ],
+    get origin() { return this.departures[0] },
     keywords: ['부산', '해운대', '광안리'],
     canned: '부산은 해운대 무장애 해변 산책로와 영화의전당 일대가 휠체어 접근성이 좋기로 알려져 있어요.' },
   { id: 'jeonju', name: '전주 · 한옥마을', ready: true,
     center: { lat: 35.8143, lng: 127.1524 }, bbox: [35.70, 35.92, 127.05, 127.28],
-    origin: { name: '한옥마을 공영주차장', lat: 35.8172, lng: 127.1479 },
+    departures: [
+      { name: '한옥마을 공영주차장', lat: 35.8172, lng: 127.1479, type: '주차장', aliases: ['한옥마을'] },
+      { name: '전주고속버스터미널', lat: 35.8253, lng: 127.1447, type: '버스터미널', aliases: ['전주터미널', '고속버스터미널'] },
+      { name: '전주시외버스터미널', lat: 35.8245, lng: 127.1440, type: '버스터미널', aliases: ['시외버스터미널'] },
+    ],
+    get origin() { return this.departures[0] },
     keywords: ['전주', '한옥마을'],
     canned: '전주 한옥마을은 경기전 앞 큰길과 태조로 구간이 비교적 평탄해 이동약자 여행 수요가 많은 곳이에요.' },
   { id: 'gangneung', name: '강릉 · 경포', ready: true,
     center: { lat: 37.7956, lng: 128.8961 }, bbox: [37.68, 37.92, 128.78, 129.02],
-    origin: { name: '강릉역', lat: 37.7638, lng: 128.8994 },
+    departures: [
+      { name: '강릉역', lat: 37.7638, lng: 128.8994, type: '버스터미널', aliases: ['강릉역'] },
+      { name: '강릉시외버스터미널', lat: 37.7639, lng: 128.8967, type: '버스터미널', aliases: ['시외버스터미널', '강릉터미널'] },
+      { name: '경포해변 주차장', lat: 37.7956, lng: 128.8961, type: '주차장', aliases: ['경포', '경포해변'] },
+    ],
+    get origin() { return this.departures[0] },
     keywords: ['강릉', '경포', '안목'] },
   { id: 'yeosu', name: '여수 · 오동도', ready: true,
     center: { lat: 34.7406, lng: 127.7669 }, bbox: [34.63, 34.87, 127.63, 127.87],
-    origin: { name: '여수엑스포역', lat: 34.7526, lng: 127.748 },
+    departures: [
+      { name: '여수엑스포역', lat: 34.7526, lng: 127.748, type: '버스터미널', aliases: ['엑스포', '여수엑스포'] },
+      { name: '여수종합버스터미널', lat: 34.7607, lng: 127.6622, type: '버스터미널', aliases: ['여수터미널', '종합버스터미널'] },
+      { name: '이순신광장 공영주차장', lat: 34.7377, lng: 127.7419, type: '주차장', aliases: ['이순신광장'] },
+    ],
+    get origin() { return this.departures[0] },
     keywords: ['여수', '오동도', '낭만포차'] },
   { id: 'jeju', name: '제주 · 제주시', ready: true,
     center: { lat: 33.5138, lng: 126.5219 }, bbox: [33.4, 33.62, 126.38, 126.67],
-    origin: { name: '제주버스터미널', lat: 33.4996, lng: 126.5145 },
+    departures: [
+      { name: '제주버스터미널', lat: 33.4996, lng: 126.5145, type: '버스터미널', aliases: ['제주터미널', '버스터미널'] },
+      { name: '제주국제공항 주차장', lat: 33.5104, lng: 126.4914, type: '주차장', aliases: ['제주공항', '공항'] },
+      { name: '동문시장 공영주차장', lat: 33.5127, lng: 126.5270, type: '주차장', aliases: ['동문시장'] },
+    ],
+    get origin() { return this.departures[0] },
     keywords: ['제주', '용두암', '동문시장'] },
   { id: 'suwon', name: '수원 · 화성', ready: true,
     center: { lat: 37.2818, lng: 127.0137 }, bbox: [37.2, 37.36, 126.93, 127.1],
-    origin: { name: '팔달문', lat: 37.278, lng: 127.0163 },
+    departures: [
+      { name: '팔달문', lat: 37.278, lng: 127.0163, type: '주차장', aliases: ['팔달문', '행궁', '화성행궁'] },
+      { name: '수원역', lat: 37.2656, lng: 127.0006, type: '지하철역', aliases: ['수원역'] },
+      { name: '화서역', lat: 37.2857, lng: 126.9967, type: '지하철역', aliases: ['화서'] },
+    ],
+    get origin() { return this.departures[0] },
     keywords: ['수원', '화성행궁', '행궁'] },
   { id: 'incheon', name: '인천 · 개항장', ready: true,
     center: { lat: 37.4736, lng: 126.6216 }, bbox: [37.4, 37.55, 126.55, 126.72],
-    origin: { name: '인천역', lat: 37.4766, lng: 126.6169 },
+    departures: [
+      { name: '인천역', lat: 37.4766, lng: 126.6169, type: '지하철역', aliases: ['인천역', '차이나타운'] },
+      { name: '동인천역', lat: 37.4735, lng: 126.6323, type: '지하철역', aliases: ['동인천'] },
+      { name: '월미도 주차장', lat: 37.4757, lng: 126.5977, type: '주차장', aliases: ['월미도'] },
+    ],
+    get origin() { return this.departures[0] },
     keywords: ['인천', '개항장', '월미도', '차이나타운'] },
   { id: 'daegu', name: '대구 · 근대골목', ready: true,
     center: { lat: 35.866, lng: 128.595 }, bbox: [35.8, 35.94, 128.52, 128.68],
-    origin: { name: '반월당역', lat: 35.8659, lng: 128.5934 },
+    departures: [
+      { name: '반월당역', lat: 35.8659, lng: 128.5934, type: '지하철역', aliases: ['반월당'] },
+      { name: '동대구역', lat: 35.8797, lng: 128.6285, type: '지하철역', aliases: ['동대구'] },
+      { name: '중앙로역', lat: 35.8703, lng: 128.5952, type: '지하철역', aliases: ['중앙로', '동성로'] },
+    ],
+    get origin() { return this.departures[0] },
     keywords: ['대구', '근대골목', '김광석', '동성로'] },
 ]
 
@@ -98,7 +156,7 @@ function routeSummary(r, course) {
 const GREETING = {
   role: 'assistant',
   content:
-    '안녕하세요! 이동약자를 위한 무장애 여행 플래너 "모두의 여행"입니다.\n' +
+    '안녕하세요! 이동약자를 위한 무장애 여행 플래너 "편해질지도"입니다.\n' +
     '어디로, 어떤 조건으로 여행하고 싶으신가요? 전국 10개 지역(서울·경주·부산·전주·강릉·여수·제주·수원·인천·대구)을 지원해요.\n' +
     '예: "휠체어로 반나절 코스", "유모차 가족 코스"처럼 말씀해주세요.',
 }
@@ -110,6 +168,7 @@ export default function App() {
   const [route, setRoute] = useState(null)
   const [loading, setLoading] = useState(false)
   const [survey, setSurvey] = useState(true) // 첫 화면 = 페르소나 설문 (스펙 1단계)
+  const [travelMode, setTravelMode] = useState('walk') // walk | transit
   const [deck, setDeck] = useState(null) // [{place, detail}] — 카드 스와이프 후보
   const [persona, setPersona] = useState(null) // {type, badges[], tastes[]}
   const [mapFilter, setMapFilter] = useState(null) // 지도 시설 필터 (badge 키)
@@ -117,12 +176,18 @@ export default function App() {
   const [myLoc, setMyLoc] = useState(null) // 사용자가 허용한 실제 위치
   const [routeCourse, setRouteCourse] = useState([]) // 출발지 포함 경로용 코스
   const [awaitRegion, setAwaitRegion] = useState(false) // 설문 직후: 채팅으로 지역 받기
+  const [awaitDeparture, setAwaitDeparture] = useState(false) // 지역 선택 후: 채팅으로 출발지 받기
+  const [selectedDeparture, setSelectedDeparture] = useState(null) // 사용자가 고른 출발지 (Req 2.2)
+  const [restrooms, setRestrooms] = useState([]) // 코스 장소별 화장실 커버리지 결과 (Req 7.1, 7.4, 7.5)
 
-  // 출발지: 내 위치가 지역 안이면 내 위치, 아니면 지역 거점(역·터미널)
+  // 출발지 우선순위 (Req 2.2): 선택 출발지 > 내 위치(지역 안) > 유효 departures[0] > r.origin
+  // 유효성 검증(validDepartures)을 통과한 출발지만 사용한다 (Req 1.6).
   const getOrigin = (r) => {
+    if (selectedDeparture) return selectedDeparture
     if (myLoc && myLoc.lat >= r.bbox[0] && myLoc.lat <= r.bbox[1] &&
         myLoc.lng >= r.bbox[2] && myLoc.lng <= r.bbox[3]) return myLoc
-    return r.origin
+    const valid = validDepartures(r)
+    return valid[0] || r.origin
   }
 
   const locateMe = () => {
@@ -149,31 +214,122 @@ export default function App() {
     [places],
   )
 
+  const loadRoute = async (resolved, mode = travelMode) => {
+    const r = await postRoute(
+      resolved.map((c) => ({ lat: c.place.lat, lng: c.place.lng, name: c.place.title })),
+      mode,
+    )
+    setRoute(r)
+    return r
+  }
+
+  // 코스 장소별 화장실 커버리지 조회 (Req 7.1, 7.4, 7.5)
+  // 실패해도 코스 생성을 막지 않는다 — 조용히 비우고 넘어간다.
+  const loadRestrooms = async (resolved) => {
+    try {
+      const places = resolved
+        .filter((c) => c.place && c.place.contentId !== '__origin')
+        .map((c) => ({
+          contentId: c.place.contentId,
+          lat: c.place.lat,
+          lng: c.place.lng,
+          badges: c.place.badges || [],
+        }))
+      if (!places.length) { setRestrooms([]); return }
+      const res = await postRestroomCoverage(places)
+      setRestrooms(res.items || [])
+    } catch {
+      setRestrooms([])
+    }
+  }
+
+  // 도보만 ↔ 대중교통 포함 전환 (Req 6.1~6.4)
+  // - 현재 출발지/코스로 재계산 (Req 6.2): 출발지 포함 코스(routeCourse) 우선
+  // - 재계산 중 토글 비활성화: 버튼이 disabled={loading}로 이미 처리 (Req 6.3)
+  // - 실패 시 에러 메시지 + 이전 경로 유지 (Req 6.4): 성공했을 때만 setTravelMode를 호출하고
+  //   loadRoute는 await(postRoute) 성공 이후에만 setRoute하므로, 실패하면 이전 경로와
+  //   이전 모드가 그대로 유지된다(잘못된 값으로 덮어쓰지 않음).
+  const switchMode = async (mode) => {
+    if (mode === travelMode) return
+    const target = routeCourse.length ? routeCourse : course
+    if (target.length < 2) {
+      // 재계산할 경로가 없으면(표시된 route 없음) 모드 표시만 전환한다.
+      setTravelMode(mode)
+      return
+    }
+    setLoading(true)
+    try {
+      const r = await loadRoute(target, mode)
+      // 재계산이 성공한 뒤에만 모드를 전환해 UI 모드가 실제 표시 경로와 일치하도록 한다.
+      setTravelMode(mode)
+      setMessages((m) => [...m, { role: 'assistant', content: routeSummary(r, target) }])
+    } catch {
+      // 이전 travelMode와 이전 route를 그대로 유지한다 (setTravelMode/setRoute 미호출).
+      setMessages((m) => [...m, { role: 'assistant', content: '⚠️ 경로 조회에 실패했어요. 이전 경로를 유지할게요. 잠시 후 다시 시도해주세요.' }])
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
     fetchAllPlaces(region.bbox).then(setPlaces).catch(() => {
       setMessages((m) => [...m, { role: 'assistant', content: '⚠️ 백엔드 서버에 연결할 수 없습니다. uvicorn이 켜져 있는지 확인해주세요.' }])
     })
   }, [region])
 
-  // 지역 전환: 코스·경로 초기화 + 지도는 MapView가 center prop으로 이동
+  // 출발지 변경 시 재계산 (Req 2.8, 3.1): 코스가 이미 있으면 첫 waypoint(__origin)를
+  // 새 출발지로 교체하고 현재 travelMode로 경로를 다시 계산한다.
+  // selectedDeparture에만 의존하므로 내부에서 상태를 바꿔도 무한 루프가 생기지 않는다.
+  useEffect(() => {
+    if (!selectedDeparture) return
+    // 출발지를 제외한 코스 장소 목록 확보 (routeCourse[0]은 __origin)
+    const coursePlaces = routeCourse.length >= 2 ? routeCourse.slice(1) : course
+    if (coursePlaces.length < 1) return // 코스가 없으면 재계산하지 않음
+
+    const eff = selectedDeparture
+    const rc = [
+      { place: { contentId: '__origin', title: eff.name, lat: eff.lat, lng: eff.lng, type: 0, badges: [] } },
+      ...coursePlaces,
+    ]
+    setRouteCourse(rc)
+    setLoading(true)
+    loadRoute(rc, travelMode)
+      .then((r) => {
+        setMessages((m) => [...m, {
+          role: 'assistant',
+          content: `출발지를 '${eff.name}'(으)로 바꿔 경로를 다시 계산했어요.\n${routeSummary(r, rc)}`,
+        }])
+      })
+      .catch(() => {
+        setMessages((m) => [...m, { role: 'assistant', content: '⚠️ 새 출발지로 경로를 계산하지 못했어요. 잠시 후 다시 시도해주세요.' }])
+      })
+      .finally(() => setLoading(false))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDeparture])
+
+  // 지역 전환: 코스·경로·선택 출발지 초기화 + 지도는 MapView가 center prop으로 이동 (Req 2.7)
   const switchRegion = (r) => {
     setRegion(r)
     setCourse([])
     setRoute(null)
     setRouteCourse([])
+    setSelectedDeparture(null)
+    setRestrooms([])
   }
 
   const handleSend = async (text) => {
     setMessages((m) => [...m, { role: 'user', content: text }])
 
-    // 설문 직후엔 지역명을 받아 바로 후보 카드로 (목록 없이 채팅 기반)
+    // 온보딩 1단계: 지역명을 채팅으로 받는다. 인식되면 출발지 질문 단계로 넘어간다.
     if (awaitRegion) {
       const r = detectRegion(text)
       if (r?.ready) {
         setAwaitRegion(false)
         if (r.id !== region.id) switchRegion(r)
-        setMessages((m) => [...m, { role: 'assistant', content: `${r.name}(으)로 떠나볼게요! 조건에 맞는 후보를 고르고 있어요…` }])
-        buildDeck(persona, r)
+        setAwaitDeparture(true)
+        const names = validDepartures(r).map((d) => d.name).join(', ')
+        setMessages((m) => [...m, { role: 'assistant', content:
+          `${r.name}(으)로 떠나볼게요! 어디서 출발하실래요?\n출발지를 채팅으로 말씀해주세요. 예: ${names}` }])
         return
       }
       if (r && !r.ready) {
@@ -181,6 +337,44 @@ export default function App() {
         return
       }
       setMessages((m) => [...m, { role: 'assistant', content: `지역 이름을 못 알아들었어요. ${readyNames()} 중에서 말씀해주세요!` }])
+      return
+    }
+
+    // 온보딩 2단계: 출발지를 채팅으로 받는다. 인식되면 설정 후 후보 카드로 진행한다.
+    if (awaitDeparture) {
+      // 사용자가 여기서 지역을 다시 말하면 지역 전환 후 다시 출발지를 묻는다.
+      const rgn = detectRegion(text)
+      if (rgn?.ready && rgn.id !== region.id) {
+        switchRegion(rgn)
+        const names = validDepartures(rgn).map((d) => d.name).join(', ')
+        setMessages((m) => [...m, { role: 'assistant', content:
+          `${rgn.name}(으)로 바꿨어요. 어디서 출발하실래요? 예: ${names}` }])
+        return
+      }
+      const rec = recognizeDeparture(text, region)
+      if (rec.status === 'single') {
+        setAwaitDeparture(false)
+        setSelectedDeparture(rec.matches[0])
+        setMessages((m) => [...m, { role: 'assistant', content:
+          `출발지를 '${rec.matches[0].name}'(으)로 정했어요! 조건에 맞는 후보를 고르고 있어요…` }])
+        buildDeck(persona, region)
+        return
+      }
+      if (rec.status === 'multiple') {
+        const names = rec.matches.map((d) => d.name).join(', ')
+        setMessages((m) => [...m, { role: 'assistant', content: `여러 곳이 매칭돼요: ${names}. 하나만 말씀해주세요.` }])
+        return
+      }
+      // notfound / none — 출발지 목록을 다시 안내
+      const names = validDepartures(region).map((d) => d.name).join(', ')
+      setMessages((m) => [...m, { role: 'assistant', content:
+        `출발지를 못 알아들었어요. 이 중에서 말씀해주세요: ${names}\n(또는 "건너뛰기"라고 하시면 대표 출발지로 진행할게요.)` }])
+      // 건너뛰기 지원
+      if (/건너|스킵|skip|아무|모르/i.test(text)) {
+        setAwaitDeparture(false)
+        setMessages((m) => [...m, { role: 'assistant', content: `${region.origin.name} 출발 기준으로 진행할게요!` }])
+        buildDeck(persona, region)
+      }
       return
     }
 
@@ -200,6 +394,27 @@ export default function App() {
       setMessages((m) => [...m, { role: 'assistant', content: `${active.name}(으)로 안내할게요!` }])
     }
 
+    // 채팅 기반 출발지 인식 (Req 3, 4) — 지역 전환 후 활성 지역 기준으로 인식한다.
+    const rec = recognizeDeparture(text, active)
+    if (rec.status === 'single') {
+      setSelectedDeparture(rec.matches[0])
+      setMessages((m) => [...m, { role: 'assistant', content: `출발지를 '${rec.matches[0].name}'(으)로 설정했어요.` }])
+      return
+    }
+    if (rec.status === 'multiple') {
+      const names = rec.matches.map((d) => d.name).join(', ')
+      setMessages((m) => [...m, { role: 'assistant', content: `여러 출발지가 매칭돼요: ${names}. 이 중에서 하나만 말씀해주세요.` }])
+      return
+    }
+    if (rec.status === 'notfound') {
+      const names = validDepartures(active).map((d) => d.name).join(', ')
+      const head = active.name.split(' ·')[0]
+      setMessages((m) => [...m, { role: 'assistant', content: names
+        ? `'${head}'에서 고를 수 있는 출발지: ${names}. 이 중에서 말씀해주세요.`
+        : `'${head}'에는 등록된 출발지가 없어요.` }])
+      return
+    }
+
     setLoading(true)
     setRoute(null)
     try {
@@ -216,14 +431,15 @@ export default function App() {
         .map((c) => ({ ...c, place: pool[c.contentId] }))
         .filter((c) => c.place)
       setCourse(resolved)
+      if (resolved.length) loadRestrooms(resolved)
+      else setRestrooms([])
       setMessages((m) => [...m, { role: 'assistant', content: res.reply, course: resolved.length ? resolved : undefined }])
 
       if (resolved.length >= 2) {
         const eff = getOrigin(active)
         const rc = [{ place: { contentId: '__origin', title: eff.name, lat: eff.lat, lng: eff.lng, type: 0, badges: [] } }, ...resolved]
-        const r = await postRoute(rc.map((c) => ({ lat: c.place.lat, lng: c.place.lng, name: c.place.title })))
         setRouteCourse(rc)
-        setRoute(r)
+        const r = await loadRoute(rc)
         setMessages((m) => [...m, { role: 'assistant', content: routeSummary(r, rc) }])
       }
     } catch {
@@ -251,7 +467,12 @@ export default function App() {
       return
     }
     if (r.id !== region.id) switchRegion(r)
-    buildDeck(persona, r)
+    // 지역 선택 후 출발지를 채팅으로 묻는다 (온보딩 흐름 통일)
+    setAwaitRegion(false)
+    setAwaitDeparture(true)
+    const names = validDepartures(r).map((d) => d.name).join(', ')
+    setMessages((m) => [...m, { role: 'assistant', content:
+      `${r.name}(으)로 떠나볼게요! 어디서 출발하실래요? 예: ${names}` }])
   }
 
   // 안전지대 필터(2단계): 조건 100% 만족 장소만.
@@ -314,6 +535,7 @@ export default function App() {
       place: c.place,
     }))
     setCourse(resolved)
+    loadRestrooms(resolved)
     setMessages((m) => [...m, {
       role: 'assistant',
       content: `담은 ${picked.length}곳을 가까운 순서로 자동 정렬해 코스를 만들었어요. 계단 회피 경로를 확인할게요…`,
@@ -321,9 +543,8 @@ export default function App() {
     }])
     try {
       const rc = [{ place: { contentId: '__origin', title: eff.name, lat: eff.lat, lng: eff.lng, type: 0, badges: [] } }, ...resolved]
-      const r = await postRoute(rc.map((c) => ({ lat: c.place.lat, lng: c.place.lng, name: c.place.title })))
       setRouteCourse(rc)
-      setRoute(r)
+      const r = await loadRoute(rc)
       setMessages((m) => [...m, { role: 'assistant', content: routeSummary(r, rc) }])
     } catch {
       setMessages((m) => [...m, { role: 'assistant', content: '⚠️ 경로 조회에 실패했어요. 잠시 후 다시 시도해주세요.' }])
@@ -333,7 +554,7 @@ export default function App() {
   return (
     <div className="layout">
       <header className="topbar">
-        <h1><Logo /> 모두의 여행</h1>
+        <h1><Logo /> 편해질지도</h1>
         <span className="sub">무장애 관광지 {places.length}곳 · 계단 회피 경로 · AI 코스 추천</span>
         {persona && (
           <button className="persona-pill" onClick={() => setSurvey(true)}
@@ -355,7 +576,15 @@ export default function App() {
               설문으로 맞춤 코스 시작하기 <span>이동 조건 → 후보 카드 → 자동 코스</span>
             </button>
             <ChatPanel messages={messages} loading={loading} onSend={handleSend} course={course} onRegion={handleRegion} />
-            <RouteSteps route={route} course={routeCourse.length ? routeCourse : course} />
+            {(routeCourse.length || course.length) >= 2 && (
+              <div className="mode-toggle" role="group" aria-label="이동 방법 선택">
+                <button className={travelMode === 'walk' ? 'on' : ''}
+                        onClick={() => switchMode('walk')} disabled={loading}>도보만</button>
+                <button className={travelMode === 'transit' ? 'on' : ''}
+                        onClick={() => switchMode('transit')} disabled={loading}>대중교통 포함</button>
+              </div>
+            )}
+            <RouteSteps route={route} course={routeCourse.length ? routeCourse : course} restrooms={restrooms} />
           </>
         )}
       </aside>
@@ -373,7 +602,10 @@ export default function App() {
         <MapView
           places={mapFilter ? places.filter((p) => p.badges.includes(mapFilter)) : places}
           course={course} route={route} center={region.center}
-          origin={route ? getOrigin(region) : null} />
+          origin={route ? getOrigin(region) : null}
+          restrooms={restrooms
+            .map((it) => it.restroom)
+            .filter((r) => r && !r.isSelf)} />
       </main>
     </div>
   )

@@ -22,11 +22,20 @@ export const postChat = (message, region = 'seoul') =>
     body: JSON.stringify({ message, region }),
   }).then(json)
 
-export const postRoute = (waypoints) =>
+export const postRoute = (waypoints, mode = 'walk') =>
   fetch('/api/route', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ waypoints }),
+    body: JSON.stringify({ waypoints, mode }),
+  }).then(json)
+
+// 코스 장소별 500m 이내 최근접 접근 화장실 커버리지 (Req 7.1, 7.4, 7.5)
+// places = [{ contentId, lat, lng, badges }] → { items: [{ contentId, restroom: {name,lat,lng,distance,isSelf}|null }] }
+export const postRestroomCoverage = (places) =>
+  fetch('/api/restrooms/coverage', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ places }),
   }).then(json)
 
 export const BADGE_LABELS = {

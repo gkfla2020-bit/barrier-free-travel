@@ -22,9 +22,12 @@
 
 ```bash
 cd backend
-cp .env.example .env   # 키 3종 입력 (팀 메신저 참조)
+cp .env.example .env   # 키 4종 입력 (팀 메신저 참조)
 pip install -r requirements.txt
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
+
+> `ODSAY_API_KEY`(대중교통 경로): [lab.odsay.com](https://lab.odsay.com) 가입 → 마이페이지 → 애플리케이션 등록(서버 유형) → 즉시 발급.
+> 키가 없어도 앱은 동작하며, 대중교통 모드가 도보 경로로 폴백된다.
 
 ⚠️ `.env`는 절대 커밋하지 않는다 (.gitignore에 등록됨).
