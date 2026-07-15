@@ -28,18 +28,30 @@ const REGIONS = [
     origin: { name: '한옥마을 공영주차장', lat: 35.8172, lng: 127.1479 },
     keywords: ['전주', '한옥마을'],
     canned: '전주 한옥마을은 경기전 앞 큰길과 태조로 구간이 비교적 평탄해 이동약자 여행 수요가 많은 곳이에요.' },
-  { id: 'gangneung', name: '강릉 · 경포', keywords: ['강릉', '경포', '안목'],
-    canned: '강릉은 경포호 순환 산책로가 평탄하고 안목해변 카페거리도 접근성이 좋은 편이에요.' },
-  { id: 'yeosu', name: '여수 · 오동도', keywords: ['여수', '오동도'],
-    canned: '여수 오동도는 셔틀(동백열차)로 진입할 수 있고 이순신광장 일대가 평탄해요.' },
-  { id: 'jeju', name: '제주 · 제주시', keywords: ['제주', '용두암'],
-    canned: '제주는 용두암 해안 산책로와 동문시장 일대가 휠체어 접근이 수월한 편이에요.' },
-  { id: 'suwon', name: '수원 · 화성', keywords: ['수원', '화성행궁'],
-    canned: '수원 화성행궁 광장과 행리단길 초입은 평탄해서 이동약자 방문이 많은 곳이에요.' },
-  { id: 'incheon', name: '인천 · 개항장', keywords: ['인천', '개항장', '월미도'],
-    canned: '인천 개항장 거리와 월미도 문화의거리는 보도가 넓고 평탄한 편이에요.' },
-  { id: 'daegu', name: '대구 · 근대골목', keywords: ['대구', '근대골목', '김광석'],
-    canned: '대구 근대골목 일부 평탄 구간과 김광석다시그리기길이 접근성 좋은 코스로 꼽혀요.' },
+  { id: 'gangneung', name: '강릉 · 경포', ready: true,
+    center: { lat: 37.7956, lng: 128.8961 }, bbox: [37.68, 37.92, 128.78, 129.02],
+    origin: { name: '강릉역', lat: 37.7638, lng: 128.8994 },
+    keywords: ['강릉', '경포', '안목'] },
+  { id: 'yeosu', name: '여수 · 오동도', ready: true,
+    center: { lat: 34.7406, lng: 127.7669 }, bbox: [34.63, 34.87, 127.63, 127.87],
+    origin: { name: '여수엑스포역', lat: 34.7526, lng: 127.748 },
+    keywords: ['여수', '오동도', '낭만포차'] },
+  { id: 'jeju', name: '제주 · 제주시', ready: true,
+    center: { lat: 33.5138, lng: 126.5219 }, bbox: [33.4, 33.62, 126.38, 126.67],
+    origin: { name: '제주버스터미널', lat: 33.4996, lng: 126.5145 },
+    keywords: ['제주', '용두암', '동문시장'] },
+  { id: 'suwon', name: '수원 · 화성', ready: true,
+    center: { lat: 37.2818, lng: 127.0137 }, bbox: [37.2, 37.36, 126.93, 127.1],
+    origin: { name: '팔달문', lat: 37.278, lng: 127.0163 },
+    keywords: ['수원', '화성행궁', '행궁'] },
+  { id: 'incheon', name: '인천 · 개항장', ready: true,
+    center: { lat: 37.4736, lng: 126.6216 }, bbox: [37.4, 37.55, 126.55, 126.72],
+    origin: { name: '인천역', lat: 37.4766, lng: 126.6169 },
+    keywords: ['인천', '개항장', '월미도', '차이나타운'] },
+  { id: 'daegu', name: '대구 · 근대골목', ready: true,
+    center: { lat: 35.866, lng: 128.595 }, bbox: [35.8, 35.94, 128.52, 128.68],
+    origin: { name: '반월당역', lat: 35.8659, lng: 128.5934 },
+    keywords: ['대구', '근대골목', '김광석', '동성로'] },
 ]
 
 const detectRegion = (text) =>
@@ -87,7 +99,7 @@ const GREETING = {
   role: 'assistant',
   content:
     '안녕하세요! 이동약자를 위한 무장애 여행 플래너 "모두의 여행"입니다.\n' +
-    '어디로, 어떤 조건으로 여행하고 싶으신가요? (지원 지역: 서울 · 경주 · 부산 · 전주)\n' +
+    '어디로, 어떤 조건으로 여행하고 싶으신가요? 전국 10개 지역(서울·경주·부산·전주·강릉·여수·제주·수원·인천·대구)을 지원해요.\n' +
     '예: "휠체어로 반나절 코스", "유모차 가족 코스"처럼 말씀해주세요.',
 }
 
@@ -104,6 +116,7 @@ export default function App() {
   const [region, setRegion] = useState(REGIONS[0]) // 현재 지역 (ready 지역만 진입)
   const [myLoc, setMyLoc] = useState(null) // 사용자가 허용한 실제 위치
   const [routeCourse, setRouteCourse] = useState([]) // 출발지 포함 경로용 코스
+  const [awaitRegion, setAwaitRegion] = useState(false) // 설문 직후: 채팅으로 지역 받기
 
   // 출발지: 내 위치가 지역 안이면 내 위치, 아니면 지역 거점(역·터미널)
   const getOrigin = (r) => {
@@ -152,6 +165,24 @@ export default function App() {
 
   const handleSend = async (text) => {
     setMessages((m) => [...m, { role: 'user', content: text }])
+
+    // 설문 직후엔 지역명을 받아 바로 후보 카드로 (목록 없이 채팅 기반)
+    if (awaitRegion) {
+      const r = detectRegion(text)
+      if (r?.ready) {
+        setAwaitRegion(false)
+        if (r.id !== region.id) switchRegion(r)
+        setMessages((m) => [...m, { role: 'assistant', content: `${r.name}(으)로 떠나볼게요! 조건에 맞는 후보를 고르고 있어요…` }])
+        buildDeck(persona, r)
+        return
+      }
+      if (r && !r.ready) {
+        setMessages((m) => [...m, { role: 'assistant', content: `${r.canned || ''}\n지금 바로 코스를 만들 수 있는 곳: ${readyNames()}. 이 중에서 골라주세요!` }])
+        return
+      }
+      setMessages((m) => [...m, { role: 'assistant', content: `지역 이름을 못 알아들었어요. ${readyNames()} 중에서 말씀해주세요!` }])
+      return
+    }
 
     // 사용자가 지역을 먼저 말하면 여기서 연결 (미지원 지역은 답정너 안내)
     const detected = detectRegion(text)
@@ -206,10 +237,10 @@ export default function App() {
   const handleSurvey = (p) => {
     setSurvey(false)
     setPersona(p)
+    setAwaitRegion(true)
     setMessages((m) => [...m, {
       role: 'assistant',
-      content: `${p.type} 조건 확인했어요. 어느 지역으로 떠나시나요?`,
-      regions: REGIONS.filter((r) => r.ready),
+      content: `${p.type} 조건 확인했어요. 어디로 떠나실까요? 지역 이름을 채팅으로 말씀해주세요.\n예: 서울, 경주, 부산, 전주, 강릉, 여수, 제주, 수원, 인천, 대구`,
     }])
   }
 
