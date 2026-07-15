@@ -11,7 +11,7 @@ export default function Landing({ onStart }) {
     <div className="landing">
       <div className="landing-inner">
         <div className="landing-logo"><Logo size={72} /></div>
-        <h1>모두의 여행</h1>
+        <h1>편해질지도</h1>
         <p className="landing-tag">이동약자를 위한 무장애 여행 플래너</p>
 
         <ul className="landing-features">
@@ -29,7 +29,7 @@ export default function Landing({ onStart }) {
         <button className="landing-cta" onClick={onStart}>시작하기</button>
 
         <p className="landing-meta">
-          전국 10개 지역 · 무장애 인증 341곳
+          전국 10개 지역 · 무장애 인증 342곳
           <span>서울 · 경주 · 부산 · 전주 · 강릉 · 여수 · 제주 · 수원 · 인천 · 대구</span>
         </p>
       </div>

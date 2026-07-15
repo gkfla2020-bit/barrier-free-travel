@@ -163,6 +163,7 @@ export default function RouteSteps({ route, course, restrooms = null }) {
           <li><span className="diff hard">어려움</span> 계단·육교·지하보도 1회 이상 / 도보 1.5km 초과 / 경사로 3회 이상</li>
           <li><span className="diff mid">중간</span> 경사로 1~2회 / 횡단보도 5회 이상 / 도보 700m~1.5km</li>
           <li><span className="diff easy">쉬움</span> 위 해당 없음 (단, 중간 요소 4개 이상이면 어려움으로 상향)</li>
+          <li className="crit-note">경사 회피 ON이면 경사로 1회부터 '어려움'으로 판정합니다.</li>
           <li className="crit-note">산정 원칙: 경로에서 <b>가장 어려운 요소 하나</b>가 최종 난이도를 정합니다(worst-element).
             계단 칸수·경사 각도·육교의 승강설비처럼 데이터로 확인할 수 없는 것은 안전하게 어려운 쪽으로 판정합니다.</li>
           <li className="crit-note">코스 전체가 도보 4km를 넘으면 이동약자 반나절 권장 기준 초과로 '어려움' 처리합니다.</li>

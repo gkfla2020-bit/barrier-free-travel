@@ -22,5 +22,6 @@ def get_route(req: RouteRequest):
                     "출발지를 선택하고 코스에 장소를 1개 이상 추가해주세요."
                 ),
             )
+        # avoidSlope는 도보 전용 옵션 — 대중교통 leg 구성에는 적용하지 않는다
         return transit.route(waypoints)
-    return tmap.route(waypoints)
+    return tmap.route(waypoints, req.avoidSlope)

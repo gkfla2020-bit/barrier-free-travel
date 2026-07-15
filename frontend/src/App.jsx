@@ -5,7 +5,7 @@ import RouteSteps from './RouteSteps'
 import { PersonaSurvey, CardDeck } from './PersonaDeck'
 import Landing from './Landing'
 import { Logo, BadgeIcon } from './Icons'
-import { fetchAllPlaces, fetchPlaceDetail, postChat, postRoute, postRestroomCoverage, BADGE_LABELS } from './api'
+import { fetchAllPlaces, fetchPlaceDetail, postChat, postRoute, postIntent, postRestroomCoverage, BADGE_LABELS } from './api'
 import { validDepartures, recognizeDeparture } from './departures'
 import './App.css'
 
@@ -181,6 +181,8 @@ export default function App() {
   const [awaitDeparture, setAwaitDeparture] = useState(false) // 지역 선택 후: 채팅으로 출발지 받기
   const [selectedDeparture, setSelectedDeparture] = useState(null) // 사용자가 고른 출발지 (Req 2.2)
   const [restrooms, setRestrooms] = useState([]) // 코스 장소별 화장실 커버리지 결과 (Req 7.1, 7.4, 7.5)
+  const [avoidSlope, setAvoidSlope] = useState(false) // 경사 회피 모드 (POST /api/route avoidSlope)
+  const [intentAnchor, setIntentAnchor] = useState(null) // 인텐트 랜드마크 {name,lat,lng} — 카드덱 앵커 강제
 
   // 출발지 우선순위 (Req 2.2): 선택 출발지 > 내 위치(지역 안) > 유효 departures[0] > r.origin
   // 유효성 검증(validDepartures)을 통과한 출발지만 사용한다 (Req 1.6).
@@ -216,13 +218,35 @@ export default function App() {
     [places],
   )
 
-  const loadRoute = async (resolved, mode = travelMode) => {
+  const loadRoute = async (resolved, mode = travelMode, slope = avoidSlope) => {
     const r = await postRoute(
       resolved.map((c) => ({ lat: c.place.lat, lng: c.place.lng, name: c.place.title })),
-      mode,
+      { mode, avoidSlope: slope },
     )
     setRoute(r)
     return r
+  }
+
+  // 경사 회피 토글: 표시 중인 경로가 있으면 새 옵션으로 즉시 재계산.
+  // 실패 시 토글·경로 모두 이전 상태를 유지한다 (switchMode와 동일한 원칙).
+  const toggleAvoidSlope = async () => {
+    const next = !avoidSlope
+    const target = routeCourse.length >= 2 ? routeCourse : course
+    if (!route || target.length < 2) {
+      setAvoidSlope(next) // 아직 경로가 없으면 다음 계산부터 적용
+      return
+    }
+    setLoading(true)
+    try {
+      const r = await loadRoute(target, travelMode, next)
+      setAvoidSlope(next)
+      setMessages((m) => [...m, { role: 'assistant',
+        content: `경사 회피를 ${next ? '켜고' : '끄고'} 경로를 다시 계산했어요.\n${routeSummary(r, target)}` }])
+    } catch {
+      setMessages((m) => [...m, { role: 'assistant', content: '⚠️ 경사 회피 경로 계산에 실패했어요. 이전 경로를 유지할게요.' }])
+    } finally {
+      setLoading(false)
+    }
   }
 
   // 코스 장소별 화장실 커버리지 조회 (Req 7.1, 7.4, 7.5)
@@ -317,25 +341,40 @@ export default function App() {
     setRouteCourse([])
     setSelectedDeparture(null)
     setRestrooms([])
+    setIntentAnchor(null) // 지역이 바뀌면 이전 랜드마크 앵커는 무효
   }
 
   const handleSend = async (text) => {
     setMessages((m) => [...m, { role: 'user', content: text }])
 
-    // 온보딩 1단계: 지역명을 채팅으로 받는다. 인식되면 출발지 질문 단계로 넘어간다.
+    // 온보딩 1단계: 출발지/지역명을 채팅으로 받는다. 인식되면 출발지 질문 단계로 넘어간다.
     if (awaitRegion) {
-      const r = detectRegion(text)
-      if (r?.ready) {
+      const goRegion = (r, extra = '') => {
         setAwaitRegion(false)
         if (r.id !== region.id) switchRegion(r)
         setAwaitDeparture(true)
         const names = validDepartures(r).map((d) => d.name).join(', ')
         setMessages((m) => [...m, { role: 'assistant', content:
-          `${r.name}(으)로 떠나볼게요! 어디서 출발하실래요?\n출발지를 채팅으로 말씀해주세요. 예: ${names}` }])
+          `${r.name}(으)로 떠나볼게요!${extra} 어디서 출발하실래요?\n출발지를 채팅으로 말씀해주세요. 예: ${names}` }])
+      }
+      const r = detectRegion(text)
+      if (r?.ready) {
+        goRegion(r)
         return
       }
       if (r && !r.ready) {
         setMessages((m) => [...m, { role: 'assistant', content: `${r.canned || ''}\n지금 바로 코스를 만들 수 있는 곳: ${readyNames()}. 이 중에서 골라주세요!` }])
+        return
+      }
+      // 로컬 키워드 실패 → 인텐트 API로 보정 (오타·랜드마크 발화 대응, 1~2초)
+      setLoading(true)
+      const intent = await postIntent(text)
+      setLoading(false)
+      const ir = intent?.regionId ? REGIONS.find((x) => x.id === intent.regionId) : null
+      if (ir?.ready) {
+        goRegion(ir, intent.landmark ? ` '${intent.landmark.name}' 주변으로 후보를 모아볼게요.` : '')
+        // goRegion의 switchRegion이 앵커를 비우므로 반드시 그 뒤에 설정한다
+        if (intent.landmark) setIntentAnchor(intent.landmark)
         return
       }
       setMessages((m) => [...m, { role: 'assistant', content: `지역 이름을 못 알아들었어요. ${readyNames()} 중에서 말씀해주세요!` }])
@@ -359,7 +398,7 @@ export default function App() {
         setSelectedDeparture(rec.matches[0])
         setMessages((m) => [...m, { role: 'assistant', content:
           `출발지를 '${rec.matches[0].name}'(으)로 정했어요! 조건에 맞는 후보를 고르고 있어요…` }])
-        buildDeck(persona, region)
+        buildDeck(persona, region, intentAnchor)
         return
       }
       if (rec.status === 'multiple') {
@@ -375,13 +414,25 @@ export default function App() {
       if (/건너|스킵|skip|아무|모르/i.test(text)) {
         setAwaitDeparture(false)
         setMessages((m) => [...m, { role: 'assistant', content: `${region.origin.name} 출발 기준으로 진행할게요!` }])
-        buildDeck(persona, region)
+        buildDeck(persona, region, intentAnchor)
       }
       return
     }
 
     // 사용자가 지역을 먼저 말하면 여기서 연결 (미지원 지역은 답정너 안내)
-    const detected = detectRegion(text)
+    let detected = detectRegion(text)
+    let intentLandmark = null
+    if (!detected) {
+      // 로컬 키워드 실패 → 인텐트 API로 한 번 보정 (오타 "재주"→제주 같은 케이스)
+      setLoading(true)
+      const intent = await postIntent(text)
+      setLoading(false)
+      const ir = intent?.regionId ? REGIONS.find((x) => x.id === intent.regionId) : null
+      if (ir && (intent.confidence ?? 1) >= 0.5) {
+        detected = ir
+        intentLandmark = intent.landmark || null
+      }
+    }
     if (detected && !detected.ready) {
       setMessages((m) => [...m, {
         role: 'assistant',
@@ -395,6 +446,8 @@ export default function App() {
       switchRegion(active)
       setMessages((m) => [...m, { role: 'assistant', content: `${active.name}(으)로 안내할게요!` }])
     }
+    // 인텐트가 랜드마크를 찾았으면 이후 카드덱 앵커로 사용 (switchRegion 뒤에 설정)
+    if (intentLandmark) setIntentAnchor(intentLandmark)
 
     // 채팅 기반 출발지 인식 (Req 3, 4) — 지역 전환 후 활성 지역 기준으로 인식한다.
     const rec = recognizeDeparture(text, active)
@@ -458,7 +511,7 @@ export default function App() {
     setAwaitRegion(true)
     setMessages((m) => [...m, {
       role: 'assistant',
-      content: `${p.type} 조건 확인했어요. 어디로 떠나실까요? 지역 이름을 채팅으로 말씀해주세요.\n예: 서울, 경주, 부산, 전주, 강릉, 여수, 제주, 수원, 인천, 대구`,
+      content: `${p.type} 조건 확인했어요. 어디로 떠나실까요? 출발지나 지역을 말씀해주세요 (예: 광화문, 해운대, 전주 한옥마을)`,
     }])
   }
 
@@ -480,7 +533,9 @@ export default function App() {
   // 안전지대 필터(2단계): 조건 100% 만족 장소만.
   // '여유롭게'면 앵커(중심에서 가장 가까운 관광지) 반경 700m 클러스터로 묶어
   // 구간을 짧게 만든다 — 쉬움/중간 코스가 실제로 나오는 핵심.
-  const buildDeck = async (p, r = region) => {
+  // anchorOverride({name,lat,lng})가 있으면 밀집 클러스터 탐색 대신 그 좌표를 앵커로 강제
+  // — 인텐트가 찾은 랜드마크 주변으로 코스 후보를 짠다.
+  const buildDeck = async (p, r = region, anchorOverride = null) => {
     const list = await fetchAllPlaces(r.bbox).catch(() => places)
     const center = r.center
     const required = [...new Set([
@@ -498,14 +553,18 @@ export default function App() {
     }
     const cafes = near(list.filter((pl) => pl.category === 'cafe' && match(pl)))
     let selT = tours.slice(0, 5), selF = foods.slice(0, 3), selC = cafes.slice(0, 3)
-    if (p.pace !== 'full' && tours.length) {
-      // 가장 밀집한 클러스터의 앵커 선정 — 700m 안에 조건 만족 장소가 가장 많은
+    if ((anchorOverride || p.pace !== 'full') && tours.length) {
+      // 앵커 결정: 인텐트 랜드마크가 있으면 그 좌표를 그대로 사용,
+      // 없으면 가장 밀집한 클러스터의 앵커 선정 — 700m 안에 조건 만족 장소가 가장 많은
       // 관광지. (중심 최근접 앵커는 주변이 헐거우면 반경이 넓어져 코스가 길어짐)
-      let anchor = tours[0], bestCount = -1
-      for (const a of tours) {
-        const cnt = tours.filter((t) => distKm(t, a) <= 0.7).length +
-                    foods.filter((f) => distKm(f, a) <= 0.7).length
-        if (cnt > bestCount) { bestCount = cnt; anchor = a }
+      let anchor = anchorOverride ? { lat: anchorOverride.lat, lng: anchorOverride.lng } : tours[0]
+      if (!anchorOverride) {
+        let bestCount = -1
+        for (const a of tours) {
+          const cnt = tours.filter((t) => distKm(t, a) <= 0.7).length +
+                      foods.filter((f) => distKm(f, a) <= 0.7).length
+          if (cnt > bestCount) { bestCount = cnt; anchor = a }
+        }
       }
       for (const km of [0.7, 1.0, 1.4]) {
         const byAnchor = (a, b) => distKm(a, anchor) - distKm(b, anchor)
@@ -526,7 +585,7 @@ export default function App() {
     setDeck(groups)
     setMessages((m) => [...m, {
       role: 'assistant',
-      content: `${p.type} 기준, 조건(${required.map((b) => BADGE_LABELS[b] || b).join(', ') || '무장애 인증'})을 만족하는 후보를 여행지 ${selT.length} · 식당 ${selF.length} · 카페 ${selC.length}곳으로 나눠 준비했어요.${p.pace !== 'full' ? ' 짧은 동선이 되도록 서로 가까운 곳만 모았어요.' : ''} 카테고리별로 마음에 드는 곳을 담아보세요!`,
+      content: `${p.type} 기준, 조건(${required.map((b) => BADGE_LABELS[b] || b).join(', ') || '무장애 인증'})을 만족하는 후보를 여행지 ${selT.length} · 식당 ${selF.length} · 카페 ${selC.length}곳으로 나눠 준비했어요.${anchorOverride ? ` '${anchorOverride.name}' 주변으로 모았어요.` : p.pace !== 'full' ? ' 짧은 동선이 되도록 서로 가까운 곳만 모았어요.' : ''} 카테고리별로 마음에 드는 곳을 담아보세요!`,
     }])
   }
 
@@ -609,6 +668,8 @@ export default function App() {
             </button>
           ))}
           <button className={myLoc ? 'on' : ''} onClick={locateMe}>내 위치 출발</button>
+          <button className={avoidSlope ? 'on' : ''} onClick={toggleAvoidSlope}
+                  disabled={loading} aria-pressed={avoidSlope}>경사 회피</button>
         </div>
         <MapView
           places={mapFilter ? places.filter((p) => p.badges.includes(mapFilter)) : places}
