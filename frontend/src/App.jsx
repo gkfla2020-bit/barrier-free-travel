@@ -224,6 +224,15 @@ export default function App() {
   const [stage, setStage] = useState('title') // title | app — 타이틀 페이지에서 시작하기로 진입
   const [sheetOpen, setSheetOpen] = useState(true) // 모바일 바텀시트 펼침 상태
   const [routeBusy, setRouteBusy] = useState(null) // 경로 탐색 중 오버레이 문구 (null = 없음)
+  // 경사회피 토글 결과 토스트 — 시트가 접혀 있으면 채팅 설명이 안 보여서,
+  // "켰는데 지도가 안 변함 = 고장?"으로 오해된다. 결과를 지도 위에 잠깐 띄운다.
+  const [slopeNotice, setSlopeNotice] = useState(null)
+  const slopeNoticeTimer = useRef(null)
+  const showSlopeNotice = (text) => {
+    setSlopeNotice(text)
+    clearTimeout(slopeNoticeTimer.current)
+    slopeNoticeTimer.current = setTimeout(() => setSlopeNotice(null), 6000)
+  }
   // 이 코스에 대중교통 경로가 없음이 확인됨 — 도보와 똑같은 경로가 점선으로만 바뀌는
   // 혼란을 막기 위해 버튼을 비활성화한다. 코스가 바뀌면 다시 알 수 없으므로 리셋.
   const [transitUnavailable, setTransitUnavailable] = useState(false)
@@ -276,6 +285,17 @@ export default function App() {
     try {
       const r = await loadRoute(rc, travelMode, next)
       setMessages((m) => [...m, { role: 'assistant', content: slopeSummary(r, next) }])
+      // 시트가 접혀 있어도 결과가 보이게 지도 위 토스트로 요약
+      if (!next) {
+        showSlopeNotice('경사 회피 껐어요 — 최단 경로로 안내합니다')
+      } else if (r.baseline) {
+        showSlopeNotice(`경사 회피 적용 — ${r.baseline.detourLegs}개 구간 우회 · ` +
+          `급경사 ${r.baseline.steepDist}m → ${r.slope.steepDist}m · ` +
+          `최대 ${r.baseline.maxGrade}% → ${r.slope.maxGrade}% (회색 점선 = 원래 경로)`)
+      } else {
+        showSlopeNotice('이 코스엔 더 완만한 우회로가 없어 원래 경로를 유지해요 ' +
+          '(가파른 구간이 진입로라 어느 길로도 피할 수 없음)')
+      }
     } catch {
       setAvoidSlope(!next)
       setMessages((m) => [...m, { role: 'assistant', content: '⚠️ 경로를 다시 찾지 못했어요. 이전 경로를 유지합니다.' }])
@@ -913,6 +933,9 @@ export default function App() {
           ))}
           <button className={myLoc ? 'on' : ''} onClick={locateMe}>내 위치 출발</button>
         </div>
+        {slopeNotice && (
+          <div className="slope-toast" role="status" aria-live="polite">{slopeNotice}</div>
+        )}
         {/* 배지는 실사 원문에서 확실히 확인된 곳에만 단다 — 적은 건 버그가 아니라 데이터의 정직함 */}
         {mapFilter && (badgeCounts[mapFilter] || 0) === 0 && (
           <div className="filter-empty" role="status">

@@ -580,3 +580,14 @@ body { font-family: 'Apple SD Gothic Neo', Pretendard, system-ui, sans-serif; co
 
 /* 범례: 점선 = 계단 가능성 (도보·대중교통 공통 기준) */
 .line.dashline { background: repeating-linear-gradient(90deg, #64748b 0 5px, transparent 5px 9px); }
+
+/* 경사회피 토글 결과 토스트 — 접힌 시트 위, 지도 하단 중앙 */
+.slope-toast {
+  position: absolute; left: 12px; right: 12px; bottom: 16px; z-index: 30;
+  background: rgb(30 41 59 / 92%); color: #fff; border-radius: 12px;
+  padding: 11px 14px; font-size: 12.5px; line-height: 1.5; font-weight: 600;
+  box-shadow: 0 4px 16px rgb(15 23 42 / 25%);
+}
+@media (max-width: 480px) {
+  .layout.phase-map .slope-toast { position: fixed; bottom: 140px; }
+}
