@@ -8,6 +8,7 @@ class PlaceOut(BaseModel):
     lat: float
     lng: float
     type: int
+    category: str = 'tour'  # tour | food | cafe
     badges: list[str]
 
 
