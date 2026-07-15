@@ -51,6 +51,7 @@ class TransitSegment(BaseModel):
     approx: bool = False  # True면 정류장 간 개략 직선(실제 도로 형상 아님)
     stationCoords: list[list[float]] = []  # 개략 직선일 때 정류장 마커 좌표 [[lat,lng],...]
     stops: list[dict] = []  # 정류장 이름+좌표 [{name,lat,lng},...] (지도 마커 라벨용)
+    stairsPossible: bool = False  # 도보 세그먼트: 계단 가능성 (지도 점선 기준 통일용)
 
 
 # Open-Meteo 표고 기반. 값은 전부 90m 평균 지형 경사 — 한계는 elevation.py 상단 참조.

@@ -138,7 +138,8 @@ def _walk_segment(base: dict) -> dict:
     항상 빈 리스트(Req 3.9)."""
     return {"mode": "walk", "name": "도보", "polyline": list(base.get("polyline", [])),
             "distance": base.get("distance", 0), "duration": base.get("duration", 0),
-            "stations": [], "color": ""}
+            "stations": [], "color": "",
+            "stairsPossible": base.get("stairsPossible", False)}
 
 
 def _walk_to(cursor: dict, target: dict, avoid_slope: bool = False) -> dict:
@@ -146,7 +147,8 @@ def _walk_to(cursor: dict, target: dict, avoid_slope: bool = False) -> dict:
     w = tmap._leg(cursor, target, avoid_slope)
     seg = {"mode": "walk", "name": "도보", "polyline": w["polyline"],
            "distance": w["distance"], "duration": w["duration"],
-           "stations": [], "color": ""}
+           "stations": [], "color": "",
+           "stairsPossible": w.get("stairsPossible", False)}
     return {"seg": seg, "leg": w}
 
 

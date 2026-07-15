@@ -577,3 +577,6 @@ body { font-family: 'Apple SD Gothic Neo', Pretendard, system-ui, sans-serif; co
 /* 원본 로고 이미지 워드마크 정렬 */
 .landing-wordmark { display: flex; justify-content: center; margin-bottom: 4px; }
 .topbar .wordmark-img { margin: 0; }
+
+/* 범례: 점선 = 계단 가능성 (도보·대중교통 공통 기준) */
+.line.dashline { background: repeating-linear-gradient(90deg, #64748b 0 5px, transparent 5px 9px); }

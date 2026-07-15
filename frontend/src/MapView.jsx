@@ -294,9 +294,10 @@ export default function MapView({ places, course, route, center, origin, restroo
           if (s.mode === 'walk') {
             // 경사 모드에서 대중교통 leg의 도보 구간은 표고 미집계 → '모름' 회색으로.
             // 난이도색으로 칠하면 경사 범례와 같은 색이 다른 뜻이 되어 오해를 만든다.
+            // 점선 = 계단 가능성 — 도보 모드와 같은 기준 (예전엔 무조건 점선이라 혼란)
             addLine(s.polyline,
               lineMode === 'slope' ? SLOPE_COLOR.unknown : (DIFF_COLOR[leg.difficulty] || '#2563eb'),
-              true)
+              !!s.stairsPossible)
           } else {
             addLine(s.polyline, s.color || '#7c3aed', !!s.approx, 7)
             // 정류장마다 마커 — 클릭하면 정류장 이름을 보여준다.

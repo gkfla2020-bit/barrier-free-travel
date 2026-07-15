@@ -842,6 +842,7 @@ export default function App() {
           ) : (
             <>
               <i className="line easy" /> 쉬움 <i className="line mid" /> 중간 <i className="line hard" /> 어려움
+              {' '}<i className="line dashline" /> 계단 가능
             </>
           )}
         </span>
