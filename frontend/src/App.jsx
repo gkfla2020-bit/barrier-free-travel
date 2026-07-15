@@ -8,6 +8,20 @@ import { fetchAllPlaces, fetchPlaceDetail, postChat, postRoute, BADGE_LABELS } f
 import './App.css'
 
 const CENTER = { lat: 37.5788, lng: 126.977 } // 경복궁 (덤프 중심)
+
+// 지원 예정 지역 10곳 — 현재 데이터는 서울(경복궁 일대)만. 지역별 덤프만 추가하면 확장.
+const REGIONS = [
+  { id: 'seoul', name: '서울 · 경복궁 일대', ready: true },
+  { id: 'busan', name: '부산 · 해운대' },
+  { id: 'gyeongju', name: '경주 · 대릉원' },
+  { id: 'jeonju', name: '전주 · 한옥마을' },
+  { id: 'gangneung', name: '강릉 · 경포' },
+  { id: 'yeosu', name: '여수 · 오동도' },
+  { id: 'jeju', name: '제주 · 제주시' },
+  { id: 'suwon', name: '수원 · 화성' },
+  { id: 'incheon', name: '인천 · 개항장' },
+  { id: 'daegu', name: '대구 · 근대골목' },
+]
 const distKm = (a, b) => Math.hypot((a.lat - b.lat) * 111, (a.lng - b.lng) * 88)
 
 // 담은 장소들을 가까운 순서로 자동 정렬 (최근접 이웃)
@@ -107,10 +121,30 @@ export default function App() {
     }
   }
 
-  // 설문(스펙 1단계) → 안전지대 필터(2단계): 조건 100% 만족 장소만, 근접순 5+2곳
-  const handleSurvey = async (p) => {
+  // 설문(스펙 1단계) 완료 → 채팅에서 지역 질문 (지역 선택 후 후보 필터로 진행)
+  const handleSurvey = (p) => {
     setSurvey(false)
     setPersona(p)
+    setMessages((m) => [...m, {
+      role: 'assistant',
+      content: `${p.type} 조건 확인했어요. 어느 지역으로 떠나시나요?`,
+      regions: REGIONS,
+    }])
+  }
+
+  const handleRegion = (r) => {
+    setMessages((m) => [...m, { role: 'user', content: r.name }])
+    if (!r.ready) {
+      setMessages((m) => [...m, { role: 'assistant', content: `${r.name} 지역은 준비 중이에요. 지금은 서울 · 경복궁 일대에서 데모를 체험할 수 있어요!` }])
+      return
+    }
+    buildDeck(persona)
+  }
+
+  // 안전지대 필터(2단계): 조건 100% 만족 장소만.
+  // '여유롭게'면 앵커(중심에서 가장 가까운 관광지) 반경 700m 클러스터로 묶어
+  // 구간을 짧게 만든다 — 쉬움/중간 코스가 실제로 나오는 핵심.
+  const buildDeck = async (p) => {
     const required = [...new Set([
       ...p.badges,
       ...(p.type.includes('휠체어') ? ['wheelchair'] : []),
@@ -124,12 +158,29 @@ export default function App() {
       foods = near(places.filter((pl) => pl.type === 39))
       setMessages((m) => [...m, { role: 'assistant', content: '⚠️ 모든 조건을 만족하는 곳이 부족해 일부 조건을 완화한 후보를 보여드려요. 카드의 배지를 꼭 확인해주세요.' }])
     }
-    const cand = [...tours.slice(0, 5), ...foods.slice(0, 2)]
+    let selT = tours.slice(0, 5), selF = foods.slice(0, 2)
+    if (p.pace !== 'full' && tours.length) {
+      // 가장 밀집한 클러스터의 앵커 선정 — 700m 안에 조건 만족 장소가 가장 많은
+      // 관광지. (중심 최근접 앵커는 주변이 헐거우면 반경이 넓어져 코스가 길어짐)
+      let anchor = tours[0], bestCount = -1
+      for (const a of tours) {
+        const cnt = tours.filter((t) => distKm(t, a) <= 0.7).length +
+                    foods.filter((f) => distKm(f, a) <= 0.7).length
+        if (cnt > bestCount) { bestCount = cnt; anchor = a }
+      }
+      for (const km of [0.7, 1.0, 1.4]) {
+        const byAnchor = (a, b) => distKm(a, anchor) - distKm(b, anchor)
+        selT = tours.filter((pl) => distKm(pl, anchor) <= km).sort(byAnchor).slice(0, 5)
+        selF = foods.filter((pl) => distKm(pl, anchor) <= km).sort(byAnchor).slice(0, 2)
+        if (selT.length >= 3 && selF.length >= 1) break
+      }
+    }
+    const cand = [...selT, ...selF]
     const details = await Promise.all(cand.map((pl) => fetchPlaceDetail(pl.contentId).catch(() => null)))
     setDeck(cand.map((pl, i) => ({ place: pl, detail: details[i] })))
     setMessages((m) => [...m, {
       role: 'assistant',
-      content: `${p.type} 기준, 조건(${required.map((b) => BADGE_LABELS[b] || b).join(', ') || '무장애 인증'})을 만족하는 안전지대 후보 ${cand.length}곳을 골랐어요. 카드를 넘기며 마음에 드는 곳을 담아보세요!`,
+      content: `${p.type} 기준, 조건(${required.map((b) => BADGE_LABELS[b] || b).join(', ') || '무장애 인증'})을 만족하는 후보 ${cand.length}곳을 골랐어요.${p.pace !== 'full' ? ' 짧은 동선이 되도록 서로 가까운 곳만 모았어요.' : ''} 카드를 넘기며 마음에 드는 곳을 담아보세요!`,
     }])
   }
 
@@ -185,7 +236,7 @@ export default function App() {
             <button className="persona-cta" onClick={() => setSurvey(true)}>
               설문으로 맞춤 코스 시작하기 <span>이동 조건 → 후보 카드 → 자동 코스</span>
             </button>
-            <ChatPanel messages={messages} loading={loading} onSend={handleSend} course={course} />
+            <ChatPanel messages={messages} loading={loading} onSend={handleSend} course={course} onRegion={handleRegion} />
             <RouteSteps route={route} course={course} />
           </>
         )}

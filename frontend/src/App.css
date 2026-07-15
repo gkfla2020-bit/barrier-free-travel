@@ -223,3 +223,7 @@ body { font-family: 'Apple SD Gothic Neo', Pretendard, system-ui, sans-serif; co
 .p-chip { display: inline-flex; align-items: center; gap: 5px; }
 .p-chip svg { color: #64748b; }
 .p-chip.on svg { color: #fff; }
+
+/* 지역 선택 칩 */
+.region-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chip.soon { opacity: 0.5; cursor: default; }

@@ -7,7 +7,7 @@ const QUICK_PROMPTS = [
   '장애인 화장실 있는 곳 위주로 하루 코스',
 ]
 
-export default function ChatPanel({ messages, loading, onSend, course }) {
+export default function ChatPanel({ messages, loading, onSend, course, onRegion }) {
   const [input, setInput] = useState('')
   const bodyRef = useRef(null)
 
@@ -28,6 +28,16 @@ export default function ChatPanel({ messages, loading, onSend, course }) {
         {messages.map((m, i) => (
           <div key={i} className={`msg ${m.role}`}>
             {m.content}
+            {m.regions && (
+              <div className="region-chips">
+                {m.regions.map((r) => (
+                  <button key={r.id} className={`chip${r.ready ? '' : ' soon'}`}
+                          onClick={() => onRegion(r)}>
+                    {r.name}{!r.ready && ' · 준비 중'}
+                  </button>
+                ))}
+              </div>
+            )}
             {m.course && (
               <ol className="course-list">
                 {m.course.map((c, j) => (
