@@ -192,7 +192,7 @@ export default function RouteSteps({ route, course, restrooms = null, avoidSlope
         <div className="steps-total warn">
           <strong>⚠️ 실제 경로를 확인하지 못했어요</strong>
           <span>
-            경로 서버에 연결하지 못해 미리 저장해둔 <b>데모 경로(서울 광화문)</b>를 표시합니다.
+            경로 서버에 연결하지 못해 미리 저장해둔 <b>데모 경로(수원 화성)</b>를 표시합니다.
             담으신 코스의 실제 거리·계단·경사가 아니므로 이동 계획에 사용하지 마세요.
           </span>
         </div>
