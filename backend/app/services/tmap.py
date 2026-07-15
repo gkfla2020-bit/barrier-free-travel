@@ -150,8 +150,42 @@ def _leg(start: dict, end: dict) -> dict:
             "difficulty": "어려움", "reasons": ["경로 확인 불가"]}
 
 
+def segment_failure_message(a: dict, b: dict) -> str:
+    """완전 실패(직선 폴백) 구간을 사람이 읽을 수 있게 식별한다 (Req 9.3).
+
+    두 경유지 사이 경로를 전혀 만들지 못한 경우, 어느 구간(출발지→도착지)이
+    라우팅되지 못했는지 이름으로 알려주는 안내 문구를 만든다."""
+    fa = (a.get("name") or "").strip() or "출발지"
+    fb = (b.get("name") or "").strip() or "도착지"
+    return f"'{fa}' → '{fb}' 구간의 경로를 찾지 못했습니다 (직선으로 표시)"
+
+
+def mark_unrouted(leg: dict, a: dict, b: dict) -> None:
+    """완전 실패 leg에 실패 구간 식별 메시지를 안내·사유 앞에 추가한다 (Req 9.3).
+
+    호출부는 캐시 오염을 막기 위해 leg의 guides/reasons를 복사한 뒤 전달해야 한다.
+    중복 삽입은 방지한다."""
+    msg = segment_failure_message(a, b)
+    guides = leg.setdefault("guides", [])
+    if msg not in guides:
+        guides.insert(0, msg)
+    reasons = leg.setdefault("reasons", [])
+    if msg not in reasons:
+        reasons.insert(0, msg)
+
+
 def route(waypoints: list[dict]) -> dict:
-    legs = [_leg(waypoints[i], waypoints[i + 1]) for i in range(len(waypoints) - 1)]
+    # 개별 외부 호출은 모두 타임아웃이 걸려 있어 응답 시간이 경계지어진다(Req 9.1):
+    # Tmap 보행자 호출은 _leg에서 httpx timeout=5.0(opt 30→0)로 제한된다.
+    legs = []
+    for a, b in zip(waypoints, waypoints[1:]):
+        leg = _leg(a, b)
+        if leg.get("fallback"):
+            # 완전 실패 구간 — 캐시 원본을 오염시키지 않도록 복사 후 식별 메시지 추가
+            leg = {**leg, "guides": list(leg.get("guides", [])),
+                   "reasons": list(leg.get("reasons", []))}
+            mark_unrouted(leg, a, b)
+        legs.append(leg)
 
     # 전 구간 실패 + 데모 픽스처 존재 → 픽스처 반환 (발표장 네트워크 사망 대비)
     if all(l["fallback"] for l in legs) and FIXTURE.exists():

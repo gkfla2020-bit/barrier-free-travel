@@ -9,6 +9,7 @@
 """
 import math
 import os
+import time
 
 import httpx
 
@@ -16,6 +17,10 @@ from . import tago, tmap
 
 URL = "https://api.odsay.com/v1/api/searchPubTransPathT"
 WALK_ONLY_M = 700  # 직선거리 이하 구간은 대중교통 없이 도보 유지 (탑승이 오히려 손해)
+# 저상버스 실시간 enrich 전체 예산(초). 다구간 코스에서 leg별 TAGO 순차 호출이
+# 누적돼 전체 응답 10초(Req 9.1)를 넘길 수 있으므로, 이 예산을 넘기면 남은 버스
+# 구간의 실시간 조회를 건너뛰고 lowFloor=None으로 둔다. 10초보다 여유 있게 잡는다.
+LOW_FLOOR_BUDGET_S = 8.0
 
 _cache: dict[tuple, dict] = {}
 _RANK = {"쉬움": 0, "중간": 1, "어려움": 2}
@@ -71,6 +76,18 @@ def _odsay(start: dict, end: dict) -> dict | None:
         return None
 
 
+def _walk_segment(base: dict) -> dict:
+    """도보 leg 하나를 단일 walk segment로 분해한다.
+
+    walk-only leg(700m 이하)와 ODsay 폴백 leg도 segment 목록을 갖도록 해
+    전체 소요시간=Σsegment duration(Req 4.1), 전체 도보=Σwalk segment distance
+    (Req 4.2) 불변식이 혼합 경로에서도 성립하게 한다. walk segment의 stations는
+    항상 빈 리스트(Req 3.9)."""
+    return {"mode": "walk", "name": "도보", "polyline": list(base.get("polyline", [])),
+            "distance": base.get("distance", 0), "duration": base.get("duration", 0),
+            "stations": [], "color": ""}
+
+
 def _walk_to(cursor: dict, target: dict) -> dict:
     """도보 구간 — Tmap 계단회피(_leg)를 그대로 재사용해 난이도·안내문까지 얻는다."""
     w = tmap._leg(cursor, target)
@@ -88,7 +105,8 @@ def _leg(start: dict, end: dict) -> dict:
 
     path = _odsay(start, end)
     if not path:  # 키 없음 / 경로 없음 / 호출 실패 → 도보 폴백
-        leg = {**tmap._leg(start, end), "mode": "walk", "segments": []}
+        base = tmap._leg(start, end)
+        leg = {**base, "mode": "walk", "segments": [_walk_segment(base)]}
         leg["guides"] = ["대중교통 경로를 찾지 못해 도보 경로로 안내합니다"] + leg["guides"]
         return leg
 
@@ -187,12 +205,23 @@ def _leg(start: dict, end: dict) -> dict:
     return leg
 
 
-def _enrich_low_floor(leg: dict) -> None:
+def _enrich_low_floor(leg: dict, deadline: float | None = None) -> None:
     """버스 구간마다 다음 버스 저상 여부를 실시간 조회해 안내에 붙인다.
-    실시간 정보라 leg 캐시에 넣지 않고 매 응답마다 갱신한다."""
+    실시간 정보라 leg 캐시에 넣지 않고 매 응답마다 갱신한다.
+
+    deadline(monotonic 타임스탬프)이 주어지면 전체 예산 가드로 동작한다(Req 9.1):
+    현재 시각이 deadline을 넘긴 뒤의 버스 구간은 TAGO 호출을 생략하고
+    lowFloor=None, lowFloorNote=""로 둔다. deadline=None이면 예산 없이 전부 조회
+    (하위 호환). 개별 TAGO 실패는 tago.next_bus가 (None, "")를 돌려주므로
+    여기서 조용히 생략된다(Req 9.2)."""
     for seg in leg["segments"]:
         board = seg.get("_board")
         if seg.get("mode") != "bus" or not board:
+            continue
+        # 예산 초과: 남은 버스 구간은 실시간 조회를 건너뛰고 미확정으로 둔다
+        if deadline is not None and time.monotonic() > deadline:
+            seg["lowFloor"] = None
+            seg["lowFloorNote"] = ""
             continue
         low, note = tago.next_bus(board["lat"], board["lng"],
                                   board["busNo"], board["name"])
@@ -210,19 +239,31 @@ def _enrich_low_floor(leg: dict) -> None:
 
 
 def route(waypoints: list[dict]) -> dict:
+    # 저상버스 enrich 전체 예산: leg 루프 전체에 걸쳐 공유한다(Req 9.1).
+    # 이 시각을 넘기면 남은 버스 구간의 TAGO 실시간 조회를 건너뛴다.
+    enrich_deadline = time.monotonic() + LOW_FLOOR_BUDGET_S
     legs = []
     for a, b in zip(waypoints, waypoints[1:]):
         if _straight_m(a, b) <= WALK_ONLY_M:
-            base = {**tmap._leg(a, b), "mode": "walk", "segments": []}
+            walk = tmap._leg(a, b)
+            base = {**walk, "mode": "walk", "segments": [_walk_segment(walk)]}
         else:
             base = _leg(a, b)
         # 캐시 원본을 오염시키지 않도록 복사 후 실시간 정보를 얹는다
         leg = {**base, "guides": list(base["guides"]), "reasons": list(base["reasons"]),
                "segments": [dict(s) for s in base.get("segments", [])]}
-        _enrich_low_floor(leg)
+        # 두 경유지 사이 경로를 완전히 만들지 못한 경우(도보 폴백마저 직선 폴백),
+        # 어느 구간(출발지→도착지)이 라우팅되지 못했는지 이름으로 안내한다(Req 9.3).
+        if leg.get("fallback"):
+            tmap.mark_unrouted(leg, a, b)
+        _enrich_low_floor(leg, deadline=enrich_deadline)
         legs.append(leg)
 
-    total_walk = sum(l["distance"] for l in legs)
+    # 전체 도보 거리 = 모든 walk segment distance 합(Req 4.2). 각 leg의 distance는
+    # walk segment 거리 합으로 구성되므로 leg-level 합과 동일하지만, 명세를 정확히
+    # 반영하도록 segment 단위로 직접 합산한다.
+    total_walk = sum(s["distance"] for l in legs
+                     for s in l.get("segments", []) if s.get("mode") == "walk")
     worst = max((l["difficulty"] for l in legs), key=_RANK.get, default="쉬움")
     if worst == "중간" and sum(1 for l in legs if l["difficulty"] == "중간") >= 4:
         worst = "어려움"
@@ -243,6 +284,11 @@ def route(waypoints: list[dict]) -> dict:
     for l in legs:  # 내부 필드는 응답에서 제거
         l.pop("_transit", None)
 
+    # 전체 소요시간 = 모든 segment duration 합(Req 4.1). leg의 duration은 그 leg의
+    # segment duration 합으로 구성되므로 leg-level 합과 동일하지만, 명세를 정확히
+    # 반영하도록 segment 단위로 직접 합산한다.
+    total_duration = sum(s["duration"] for l in legs for s in l.get("segments", []))
+
     return {"legs": legs, "totalDistance": total_walk,
-            "totalDuration": sum(l["duration"] for l in legs),
+            "totalDuration": total_duration,
             "difficulty": worst, "reasons": reasons}

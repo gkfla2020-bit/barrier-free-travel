@@ -84,3 +84,37 @@ class CourseItem(BaseModel):
 class ChatOut(BaseModel):
     reply: str
     course: list[CourseItem] = []
+
+
+# --- 장애인 화장실 커버리지 (신규 additive 모델, 기존 모델 불변) ---
+
+
+class RestroomCoveragePlace(BaseModel):
+    """커버리지 조회 입력 장소 (코스 장소 좌표/배지)."""
+
+    contentId: str = ""
+    lat: float
+    lng: float
+    badges: list[str] = []
+    title: str = ""
+
+
+class RestroomCoverageRequest(BaseModel):
+    places: list[RestroomCoveragePlace] = Field(min_length=1)
+
+
+class RestroomInfo(BaseModel):
+    name: str
+    lat: float
+    lng: float
+    distance: int  # m, 10m 단위 반올림. 자기 자신이면 0
+    isSelf: bool = False
+
+
+class RestroomCoverageItem(BaseModel):
+    contentId: str = ""
+    restroom: RestroomInfo | None = None  # None = 500m 내 없음 (notice)
+
+
+class RestroomCoverageOut(BaseModel):
+    items: list[RestroomCoverageItem]
