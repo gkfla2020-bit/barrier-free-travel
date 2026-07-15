@@ -51,13 +51,15 @@ SYSTEM = """너는 이동약자(휠체어 이용자, 고령자, 유모차 가족
 5. reply는 한국어 2~3문장으로 코스의 특징을 요약한다."""
 
 
-def _candidates(message: str) -> list[dict]:
+def _candidates(message: str, region: str = "seoul") -> list[dict]:
     required = [b for kw, b in BADGE_KEYWORDS.items() if kw in message]
 
-    # 덤프 중심(경복궁)에서 가까운 순으로 후보를 좁힌다 — 이동약자 코스는 밀집이 생명.
+    # 지역 중심에서 가까운 순으로, 해당 지역 장소만 — 이동약자 코스는 밀집이 생명.
     # LLM 프롬프트 지시만으론 먼 장소를 완전히 못 막아서 후보 단계에서 차단.
-    lng0, lat0 = store.META.get("center", [126.977, 37.5788])
-    ordered = sorted(store.PLACES.values(),
+    lng0, lat0 = store.region_center(region)
+    pool = [p for p in store.PLACES.values() if p.get("region", "seoul") == region] \
+        or list(store.PLACES.values())
+    ordered = sorted(pool,
                      key=lambda p: math.hypot((p["lat"] - lat0) * 111, (p["lng"] - lng0) * 88))
 
     def pick(type_: int, n: int, strict: bool) -> list[dict]:
@@ -86,8 +88,8 @@ def _fixture_or_error() -> dict:
             "course": []}
 
 
-def chat(message: str, history: list[dict] | None = None) -> dict:
-    cands = _candidates(message)
+def chat(message: str, history: list[dict] | None = None, region: str = "seoul") -> dict:
+    cands = _candidates(message, region)
     if not cands:
         return _fixture_or_error()
 

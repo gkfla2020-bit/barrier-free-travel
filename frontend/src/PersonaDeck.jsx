@@ -10,6 +10,10 @@ const FACILITIES = [
   { label: '휠체어 대여', badge: 'wheelchair' },
 ]
 const TASTES = ['역사/문화', '자연/힐링', '인스타 핫플', '식도락']
+const PACES = [
+  { id: 'easy', label: '여유롭게 · 짧은 동선' },
+  { id: 'full', label: '알차게 · 많이 보기' },
+]
 
 function Chip({ active, onClick, children }) {
   return (
@@ -23,6 +27,7 @@ export function PersonaSurvey({ onSubmit, onClose }) {
   const [type, setType] = useState(MOBILITY_TYPES[0])
   const [facs, setFacs] = useState(new Set(['toilet']))
   const [tastes, setTastes] = useState(new Set())
+  const [pace, setPace] = useState('easy')
 
   const toggle = (set, setter) => (v) => {
     const n = new Set(set)
@@ -55,6 +60,12 @@ export function PersonaSurvey({ onSubmit, onClose }) {
           </Chip>
         ))}
       </div>
+      <p className="p-q">일정 강도 <em>필수</em></p>
+      <div className="p-row">
+        {PACES.map((pc) => (
+          <Chip key={pc.id} active={pace === pc.id} onClick={() => setPace(pc.id)}>{pc.label}</Chip>
+        ))}
+      </div>
       <p className="p-q">여행 취향 <em>선택</em></p>
       <div className="p-row">
         {TASTES.map((t) => (
@@ -62,7 +73,7 @@ export function PersonaSurvey({ onSubmit, onClose }) {
         ))}
       </div>
       <button className="p-submit"
-              onClick={() => onSubmit({ type, badges: [...facs], tastes: [...tastes] })}>
+              onClick={() => onSubmit({ type, badges: [...facs], tastes: [...tastes], pace })}>
         조건에 맞는 후보 보기
       </button>
       <button className="p-skip" onClick={onClose}>

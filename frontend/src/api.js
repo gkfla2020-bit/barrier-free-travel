@@ -3,23 +3,23 @@ const json = (r) => {
   return r.json()
 }
 
-export async function fetchAllPlaces() {
-  // 백엔드 limit 100 → 유형별로 나눠 호출 후 병합
-  const bbox = 'minLat=37.4&maxLat=37.7&minLng=126.8&maxLng=127.2'
+export async function fetchAllPlaces(bbox) {
+  // 백엔드 limit 100 → 유형별로 나눠 호출 후 병합. bbox = [minLat, maxLat, minLng, maxLng]
+  const q = `minLat=${bbox[0]}&maxLat=${bbox[1]}&minLng=${bbox[2]}&maxLng=${bbox[3]}`
   const [tours, foods] = await Promise.all([
-    fetch(`/api/places?${bbox}&type=12`).then(json),
-    fetch(`/api/places?${bbox}&type=39`).then(json),
+    fetch(`/api/places?${q}&type=12`).then(json),
+    fetch(`/api/places?${q}&type=39`).then(json),
   ])
   return [...tours, ...foods]
 }
 
 export const fetchPlaceDetail = (id) => fetch(`/api/places/${id}`).then(json)
 
-export const postChat = (message) =>
+export const postChat = (message, region = 'seoul') =>
   fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, region }),
   }).then(json)
 
 export const postRoute = (waypoints, mode = 'walk') =>

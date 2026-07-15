@@ -71,6 +71,7 @@ class RouteOut(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
+    region: str = "seoul"
     history: list[dict] | None = None
 
 

@@ -237,3 +237,7 @@ body { font-family: 'Apple SD Gothic Neo', Pretendard, system-ui, sans-serif; co
   padding: 1px 7px; font-size: 11px; font-weight: 700; margin-left: 6px; flex: none;
 }
 .leg li.transit { color: #0f766e; font-weight: 600; }
+
+/* 지역 선택 칩 */
+.region-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chip.soon { opacity: 0.5; cursor: default; }

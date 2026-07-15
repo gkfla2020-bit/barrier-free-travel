@@ -8,4 +8,4 @@ router = APIRouter(prefix="/api", tags=["chat"])
 
 @router.post("/chat", response_model=ChatOut)
 def post_chat(req: ChatRequest):
-    return recommend.chat(req.message, req.history)
+    return recommend.chat(req.message, req.history, req.region)
