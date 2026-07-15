@@ -69,6 +69,9 @@ function TransitSegment({ seg }) {
             {seg.lowFloorNote ? ` (${seg.lowFloorNote})` : ''}
           </span>
         )}
+        {seg.approx && (
+          <span className="seg-approx"> · ⚠️ 정류장 간 개략 직선 — 실제 도로와 다를 수 있음</span>
+        )}
       </span>
     </li>
   )

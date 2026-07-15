@@ -46,6 +46,8 @@ class TransitSegment(BaseModel):
     color: str = ""  # 지하철 노선색 / 버스 녹색 (지도 렌더용)
     lowFloor: bool | None = None  # 다음 버스 저상 여부 (None = 실시간 정보 없음)
     lowFloorNote: str = ""
+    approx: bool = False  # True면 정류장 간 개략 직선(실제 도로 형상 아님)
+    stationCoords: list[list[float]] = []  # 개략 직선일 때 정류장 마커 좌표 [[lat,lng],...]
 
 
 class RouteLeg(BaseModel):

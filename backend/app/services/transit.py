@@ -76,6 +76,58 @@ def _odsay(start: dict, end: dict) -> dict | None:
         return None
 
 
+LANE_URL = "https://api.odsay.com/v1/api/loadLane"
+NOTE_APPROX = "그려진 선은 정류장 간 개략 직선이며 실제 도로 형상과 다를 수 있습니다"
+_lane_cache: dict[str, list | None] = {}
+
+
+def _graphpos_to_polyline(graph_pos) -> list[list[float]]:
+    """loadLane graphPos([{x:lng, y:lat}, ...])를 [[lat, lng], ...]로 변환.
+
+    x/y가 없거나 숫자가 아닌 점은 건너뛰고 입력 순서를 보존한다.
+    유효 점이 2개 미만이면 폴백 신호로 빈 리스트를 반환한다(순수 함수)."""
+    out: list[list[float]] = []
+    for p in graph_pos or []:
+        try:
+            lat, lng = float(p["y"]), float(p["x"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        out.append([lat, lng])
+    return out if len(out) >= 2 else []
+
+
+def _load_lane(map_obj: str) -> list[list[list[float]]] | None:
+    """ODsay loadLane API로 노선 실제 도로 형상을 조회한다.
+
+    반환: 각 section의 [[lat, lng], ...] 형상 리스트들의 리스트(대중교통 구간 순서).
+    키 없음/실패/타임아웃/빈 형상이면 None (예외는 절대 올리지 않음). map_obj로 캐시."""
+    if not map_obj:
+        return None
+    if map_obj in _lane_cache:
+        return _lane_cache[map_obj]
+    api_key = os.environ.get("ODSAY_API_KEY", "")
+    if not api_key:
+        _lane_cache[map_obj] = None
+        return None
+    referer = os.environ.get("ODSAY_REFERER", "")
+    try:
+        r = httpx.get(LANE_URL, params={
+            "mapObject": f"0:0@{map_obj}", "apiKey": api_key,
+        }, headers={"Referer": referer} if referer else {}, timeout=6.0)
+        lanes = (r.json().get("result") or {}).get("lane") or []
+        sections: list[list[list[float]]] = []
+        for lane in lanes:
+            for sec in lane.get("section") or []:
+                pts = _graphpos_to_polyline(sec.get("graphPos"))
+                if pts:
+                    sections.append(pts)
+        result = sections or None
+    except Exception:
+        result = None
+    _lane_cache[map_obj] = result
+    return result
+
+
 def _walk_segment(base: dict) -> dict:
     """도보 leg 하나를 단일 walk segment로 분해한다.
 
@@ -122,6 +174,32 @@ def _leg(start: dict, end: dict) -> dict:
     cursor = start
     subs = path.get("subPath", [])
 
+    # 실제 도로 형상(loadLane) 조회 — 대중교통 구간 순서대로 소비한다.
+    # 실패/미가용이면 None → 각 대중교통 구간을 정류장 직선 + approx 폴백 처리.
+    lane_sections = _load_lane((path.get("info") or {}).get("mapObj", ""))
+    lane_idx = 0
+
+    def _match_section(seg_pl: list, sub: dict):
+        """이 대중교통 구간에 대응하는 loadLane section 형상을 순서대로 꺼낸다.
+        endpoint 근접 검증: section 시작/끝이 구간 승하차점과 크게 어긋나면 폴백."""
+        nonlocal lane_idx
+        if not lane_sections or lane_idx >= len(lane_sections):
+            return None
+        sec = lane_sections[lane_idx]
+        lane_idx += 1
+        try:
+            s_lat, s_lng = float(sub["startY"]), float(sub["startX"])
+            e_lat, e_lng = float(sub["endY"]), float(sub["endX"])
+        except (KeyError, TypeError, ValueError):
+            return sec  # 승하차 좌표가 없으면 순서 기반만 신뢰
+        # section 양끝이 구간 양끝과 대략 맞는지(방향 무관) 확인 — 약 500m 허용
+        def near(a, b):
+            return abs(a[0] - b[0]) < 0.005 and abs(a[1] - b[1]) < 0.006
+        head, tail = sec[0], sec[-1]
+        ok = (near(head, [s_lat, s_lng]) and near(tail, [e_lat, e_lng])) or \
+             (near(head, [e_lat, e_lng]) and near(tail, [s_lat, s_lng]))
+        return sec if ok else None
+
     def add_walk(target: dict):
         nonlocal walk_m, dur_s, stairs, worst, cursor
         w = _walk_to(cursor, target)
@@ -160,18 +238,33 @@ def _leg(start: dict, end: dict) -> dict:
                   for s in (sp.get("passStopList", {}).get("stations") or [])
                   if s.get("x") and s.get("y")]
             secs = int(sp.get("sectionTime", 0)) * 60
+            # 실제 도로 형상 우선: loadLane section이 대응되면 그 형상으로 그린다.
+            # 없으면 정류장 직선(pl) + approx=True + stationCoords + 안내로 폴백.
+            lane_pl = _match_section(pl, sp)
+            if lane_pl and len(lane_pl) >= 2:
+                draw_pl, approx = lane_pl, False
+                station_coords: list[list[float]] = []
+            else:
+                draw_pl, approx = pl, True
+                station_coords = pl
             seg = {
                 "mode": "subway" if is_subway else "bus", "name": name,
-                "polyline": pl, "distance": int(sp.get("distance", 0)),
+                "polyline": draw_pl, "distance": int(sp.get("distance", 0)),
                 "duration": secs, "stations": stations,
                 "color": _subway_color(name) if is_subway else BUS_COLOR,
+                "approx": approx, "stationCoords": station_coords,
             }
             if not is_subway:  # 저상버스 실시간 조회용 승차 정보 (응답 시점에 사용)
                 seg["_board"] = {"lat": sp["startY"], "lng": sp["startX"],
                                  "name": sp.get("startName", ""),
                                  "busNo": lane.get("busNo", "")}
             segs.append(seg)
-            polyline.extend(pl)
+            polyline.extend(draw_pl)
+            if approx:
+                kind_ap = "지하철" if is_subway else "버스"
+                guides.append(f"ℹ️ [{kind_ap}] {name}: {NOTE_APPROX}")
+                if NOTE_APPROX not in reasons:
+                    reasons.append(NOTE_APPROX)
             dur_s += secs
             kind = "지하철" if is_subway else "버스"
             guides.append(

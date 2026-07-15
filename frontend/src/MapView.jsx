@@ -208,12 +208,27 @@ export default function MapView({ places, course, route, center, origin, restroo
     }
     route?.legs?.forEach((leg) => {
       if (leg.segments?.length) {
-        // 대중교통 leg: 도보(점선·난이도색) / 지하철(노선색) / 버스(녹색) 구간별로
-        leg.segments.forEach((s) =>
-          s.mode === 'walk'
-            ? addLine(s.polyline, DIFF_COLOR[leg.difficulty] || '#2563eb', true)
-            : addLine(s.polyline, s.color || '#7c3aed', false, 7),
-        )
+        // 대중교통 leg: 도보(점선·난이도색) / 지하철(노선색) / 버스(녹색) 구간별로.
+        // approx=true(정류장 간 개략 직선)면 점선으로 그려 실제 도로가 아님을 신호하고
+        // 정류장 좌표에 작은 마커를 찍어 "정류장 to 정류장"임을 명확히 한다.
+        leg.segments.forEach((s) => {
+          if (s.mode === 'walk') {
+            addLine(s.polyline, DIFF_COLOR[leg.difficulty] || '#2563eb', true)
+          } else {
+            addLine(s.polyline, s.color || '#7c3aed', !!s.approx, 7)
+            if (s.approx && Array.isArray(s.stationCoords)) {
+              s.stationCoords.forEach(([lat, lng]) => {
+                if (typeof lat !== 'number' || typeof lng !== 'number') return
+                overlaysRef.current.route.push(new T.Marker({
+                  position: new T.LatLng(lat, lng),
+                  icon: dotIcon(s.color || '#7c3aed', 5),
+                  iconSize: new T.Size(10, 10),
+                  map: mapRef.current,
+                }))
+              })
+            }
+          }
+        })
       } else {
         addLine(leg.polyline, DIFF_COLOR[leg.difficulty] || '#2563eb',
                 leg.stairsPossible) // 점선 = 계단 가능성
@@ -222,9 +237,10 @@ export default function MapView({ places, course, route, center, origin, restroo
     // 렌더 루프가 그린 폴리라인 수는 순수 계산(좌표 ≥2점 구간 수)과 일치해야 한다 (Req 5.5)
     if (import.meta.env.DEV) {
       const expected = renderablePolylineCount(route)
-      if (overlaysRef.current.route.length !== expected) {
+      const drawn = overlaysRef.current.route.filter((o) => o instanceof T.Polyline).length
+      if (drawn !== expected) {
         console.warn(
-          `[MapView] 폴리라인 렌더 수 불일치: 그림=${overlaysRef.current.route.length}, 예상=${expected}`,
+          `[MapView] 폴리라인 렌더 수 불일치: 그림=${drawn}, 예상=${expected}`,
         )
       }
     }

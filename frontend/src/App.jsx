@@ -146,7 +146,7 @@ function routeSummary(r, course) {
 const GREETING = {
   role: 'assistant',
   content:
-    '안녕하세요! 이동약자를 위한 무장애 여행 플래너 "모두의 여행"입니다.\n' +
+    '안녕하세요! 이동약자를 위한 무장애 여행 플래너 "편해질지도"입니다.\n' +
     '어디로, 어떤 조건으로 여행하고 싶으신가요? 전국 10개 지역(서울·경주·부산·전주·강릉·여수·제주·수원·인천·대구)을 지원해요.\n' +
     '예: "휠체어로 반나절 코스", "유모차 가족 코스"처럼 말씀해주세요.',
 }
@@ -477,7 +477,7 @@ export default function App() {
   return (
     <div className="layout">
       <header className="topbar">
-        <h1><Logo /> 모두의 여행</h1>
+        <h1><Logo /> 편해질지도</h1>
         <span className="sub">무장애 관광지 {places.length}곳 · 계단 회피 경로 · AI 코스 추천</span>
         {persona && (
           <button className="persona-pill" onClick={() => setSurvey(true)}
