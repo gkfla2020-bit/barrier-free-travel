@@ -344,9 +344,6 @@ def _enrich_low_floor(leg: dict, deadline: float | None = None) -> None:
 
 
 def route(waypoints: list[dict], avoid_slope: bool = False) -> dict:
-    # 저상버스 enrich 전체 예산: leg 루프 전체에 걸쳐 공유한다(Req 9.1).
-    # 이 시각을 넘기면 남은 버스 구간의 TAGO 실시간 조회를 건너뛴다.
-    enrich_deadline = time.monotonic() + LOW_FLOOR_BUDGET_S
     legs = []
     for a, b in zip(waypoints, waypoints[1:]):
         if _straight_m(a, b) <= WALK_ONLY_M:
@@ -361,8 +358,14 @@ def route(waypoints: list[dict], avoid_slope: bool = False) -> dict:
         # 어느 구간(출발지→도착지)이 라우팅되지 못했는지 이름으로 안내한다(Req 9.3).
         if leg.get("fallback"):
             tmap.mark_unrouted(leg, a, b)
-        _enrich_low_floor(leg, deadline=enrich_deadline)
         legs.append(leg)
+
+    # 저상버스 enrich 전체 예산(Req 9.1) — 경로·표고 생성이 끝난 '지금'부터 잰다.
+    # 예전엔 leg 생성 시간까지 포함해서, 콜드 캐시 + 표고 조회가 붙으면 정작 TAGO를
+    # 한 번도 못 부르고 예산이 끝나는 문제가 있었다 (부산 4구간 실측: 마지막 버스 None).
+    enrich_deadline = time.monotonic() + LOW_FLOOR_BUDGET_S
+    for leg in legs:
+        _enrich_low_floor(leg, deadline=enrich_deadline)
 
     # 전체 도보 거리 = 모든 walk segment distance 합(Req 4.2). 각 leg의 distance는
     # walk segment 거리 합으로 구성되므로 leg-level 합과 동일하지만, 명세를 정확히
@@ -396,4 +399,5 @@ def route(waypoints: list[dict], avoid_slope: bool = False) -> dict:
 
     return {"legs": legs, "totalDistance": total_walk,
             "totalDuration": total_duration,
-            "difficulty": worst, "reasons": reasons}
+            "difficulty": worst, "reasons": reasons,
+            "avoidSlope": avoid_slope}
