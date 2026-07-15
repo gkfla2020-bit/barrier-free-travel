@@ -135,7 +135,11 @@ def _leg(start: dict, end: dict) -> dict:
         elif t in (1, 2):  # 1 지하철, 2 버스
             lane = (sp.get("lane") or [{}])[0]
             is_subway = t == 1
-            name = lane.get("name", "") if is_subway else f"{lane.get('busNo', '')}번 버스"
+            # ODsay 지방 버스는 busNo에 기점이 붙어 온다 (예: "431(제주버스터미널)").
+            # 그대로 쓰면 "431(제주버스터미널)번 버스"처럼 정류장을 지어낸 것처럼 보이고,
+            # TAGO routeno("431")와도 매칭이 깨져 저상 조회가 조용히 실패한다.
+            bus_no = lane.get("busNo", "").split("(")[0].strip()
+            name = lane.get("name", "") if is_subway else f"{bus_no}번 버스"
             stations = [s.get("stationName", "")
                         for s in (sp.get("passStopList", {}).get("stations") or [])]
             pl = [[float(s["y"]), float(s["x"])]
@@ -151,7 +155,7 @@ def _leg(start: dict, end: dict) -> dict:
             if not is_subway:  # 저상버스 실시간 조회용 승차 정보 (응답 시점에 사용)
                 seg["_board"] = {"lat": sp["startY"], "lng": sp["startX"],
                                  "name": sp.get("startName", ""),
-                                 "busNo": lane.get("busNo", "")}
+                                 "busNo": bus_no}
             segs.append(seg)
             polyline.extend(pl)
             dur_s += secs

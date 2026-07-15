@@ -21,6 +21,9 @@ ARRIVAL_TTL = 30.0  # 도착정보 캐시(초) — 실시간성 유지하면서 
 _stop_cache: dict[tuple, tuple | None] = {}   # 좌표 → (cityCode, nodeId) | None
 _arrival_cache: dict[tuple, tuple[float, list]] = {}
 
+# 운수사 내부 관리용 정류소 (승객 탑승 불가, 도착정보 항상 0건)
+VIRTUAL_STOP = re.compile(r"가상|차고지")
+
 
 def _rows(path: str, **params) -> list | None:
     """TAGO 공통 호출 — 실패는 None (items 없음은 빈 리스트).
@@ -69,8 +72,12 @@ def _find_stops(lat: float, lng: float, name: str = "") -> list[tuple]:
             similar = target and nm and (nm in target or target in nm)
             return (0 if similar else 1, d)  # 이름 유사 우선, 그다음 거리
 
+        # 공공데이터에는 "제주버스터미널(가상정류소)", "차고지(가상)"처럼 운수사 내부
+        # 관리용 정류소가 섞여 있다. 승객이 탈 수 없어 도착정보가 항상 0건이므로
+        # 후보 슬롯만 낭비한다 — 제외한다.
+        real = [r for r in rows if not VIRTUAL_STOP.search(str(r.get("nodenm", "")))]
         result = [(r["citycode"], r["nodeid"])
-                  for r in sorted(rows, key=score)
+                  for r in sorted(real, key=score)
                   if r.get("citycode") and r.get("nodeid")][:4]
     _stop_cache[ck] = result
     return result
