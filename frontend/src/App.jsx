@@ -4,7 +4,7 @@ import ChatPanel from './ChatPanel'
 import RouteSteps from './RouteSteps'
 import { PersonaSurvey, CardDeck } from './PersonaDeck'
 import Landing from './Landing'
-import { Logo, BadgeIcon } from './Icons'
+import { Logo, BadgeIcon, Wordmark } from './Icons'
 import { fetchAllPlaces, fetchPlaceDetail, postChat, postRoute, postRestroomCoverage, postOnboard, resolvePlace, BADGE_LABELS } from './api'
 import { validDepartures, recognizeDeparture } from './departures'
 import './App.css'
@@ -823,7 +823,7 @@ export default function App() {
         </div>
       )}
       <header className="topbar">
-        <h1><Logo /> 편해질지도</h1>
+        <h1><Wordmark size={17} /></h1>
         <span className="sub">무장애 관광지 {places.length}곳 · 계단 회피 경로 · AI 코스 추천</span>
         {persona && (
           <button className="persona-pill" onClick={() => setSurvey(true)}
