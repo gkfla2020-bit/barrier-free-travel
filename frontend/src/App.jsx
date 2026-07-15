@@ -289,6 +289,13 @@ export default function App() {
     [places],
   )
 
+  // 시설 필터 칩에 표시할 배지별 개수 — "적게 나오는 게 버그"라는 오해를 없앤다
+  const badgeCounts = useMemo(() => {
+    const c = {}
+    for (const p of places) for (const b of p.badges || []) c[b] = (c[b] || 0) + 1
+    return c
+  }, [places])
+
   // 새 경로가 도착하면 모바일 시트를 접어 지도를 크게 보여준다.
   // 요약·핵심 토글(도보/대중교통·경사회피)은 접힌 시트의 퀵바에 항상 노출된다.
   useEffect(() => { if (route) setSheetOpen(false) }, [route])
@@ -826,7 +833,7 @@ export default function App() {
         )}
         {/* 경로선 색은 모드마다 뜻이 다르다 — 범례가 같이 안 바뀌면 같은 색이 거짓말을 한다 */}
         <span className="legend">
-          <i className="dot tour" /> 관광지 <i className="dot food" /> 음식점
+          <i className="dot tour" /> 관광지 <i className="dot food" /> 음식점 <i className="dot cafe" /> 카페
           {lineMode === 'slope' ? (
             <>
               <i className="line easy" /> 경사 5%↓ <i className="line mid" /> 5~8.3%
@@ -894,15 +901,24 @@ export default function App() {
       </aside>
       <main className="map-wrap">
         <div className="map-filters" role="group" aria-label="시설 필터">
-          <button className={!mapFilter ? 'on' : ''} onClick={() => setMapFilter(null)}>전체</button>
+          <button className={!mapFilter ? 'on' : ''} onClick={() => setMapFilter(null)}>
+            전체 <b className="cnt">{places.length}</b>
+          </button>
           {['wheelchair', 'toilet', 'parking', 'elevator'].map((b) => (
             <button key={b} className={mapFilter === b ? 'on' : ''}
                     onClick={() => setMapFilter(mapFilter === b ? null : b)}>
-              <BadgeIcon badge={b} /> {BADGE_LABELS[b]}
+              <BadgeIcon badge={b} /> {BADGE_LABELS[b]} <b className="cnt">{badgeCounts[b] || 0}</b>
             </button>
           ))}
           <button className={myLoc ? 'on' : ''} onClick={locateMe}>내 위치 출발</button>
         </div>
+        {/* 배지는 실사 원문에서 확실히 확인된 곳에만 단다 — 적은 건 버그가 아니라 데이터의 정직함 */}
+        {mapFilter && (badgeCounts[mapFilter] || 0) === 0 && (
+          <div className="filter-empty" role="status">
+            이 지역에서 '{BADGE_LABELS[mapFilter]}'이(가) 확인된 곳이 아직 없어요.
+            확실히 검증된 곳에만 배지를 답니다.
+          </div>
+        )}
         {route && (
           <div className="map-modes" role="group" aria-label="경로선 표시 기준">
             <span className="mm-label">경로선</span>
@@ -918,7 +934,7 @@ export default function App() {
           places={mapFilter ? places.filter((p) => p.badges.includes(mapFilter)) : places}
           course={course} route={route} center={region.center}
           origin={route ? getOrigin(region) : null} lineMode={lineMode}
-          hidden={onboarding}
+          hidden={onboarding} activeFilter={mapFilter}
           restrooms={restrooms
             .map((it) => it.restroom)
             .filter((r) => r && !r.isSelf)} />

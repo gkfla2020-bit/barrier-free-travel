@@ -4,6 +4,35 @@ import { renderablePolylineCount } from './mapdraw'
 import { SLOPE_COLOR, slopeSegments } from './slope'
 
 const TYPE_COLOR = { 12: '#0d9488', 39: '#ea580c' } // 관광지 teal, 음식점 orange
+// 카테고리별 마커 색 — 범례(App.jsx .legend)와 반드시 같은 값 유지
+const CAT_COLOR = { tour: '#0d9488', food: '#ea580c', cafe: '#b45309' }
+const CAT_LABEL = { tour: '관광지', food: '음식점', cafe: '카페' }
+
+// 마커 글리프(24×24 viewBox 기준 raw SVG) — Icons.jsx의 BadgeIcon과 같은 도형.
+// 시설 필터가 켜지면 해당 시설 아이콘 핀으로, 전체 탭은 카테고리 아이콘 핀으로 그린다.
+const S = 'stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"'
+const GLYPH = {
+  wheelchair: `<circle cx="10" cy="4.5" r="2" fill="#fff"/><path d="M10 7v5h5l3 6" ${S}/><path d="M13.5 19a5 5 0 1 1-6.9-6.6" ${S}/>`,
+  toilet: `<circle cx="8" cy="4.5" r="1.8" fill="#fff"/><path d="M8 7.5v5M5.5 9.5h5M8 12.5l-1.8 6M8 12.5l1.8 6" ${S}/><circle cx="16.5" cy="4.5" r="1.8" fill="#fff"/><path d="M16.5 7.5l-2 6h4l-2-6zM16.5 13.5v5" ${S}/>`,
+  parking: `<rect x="4" y="4" width="16" height="16" rx="3.5" ${S}/><path d="M10 16.5v-9h3.2a2.8 2.8 0 1 1 0 5.6H10" ${S}/>`,
+  elevator: `<rect x="4.5" y="3.5" width="15" height="17" rx="2.5" ${S}/><path d="M10 10.5l2-2.5 2 2.5M10 14l2 2.5 2-2.5" ${S}/>`,
+  tour: `<path d="M7 20V4.5" ${S}/><path d="M7 5h9.5l-2.3 3.2L16.5 11H7" fill="#fff" stroke="#fff" stroke-width="1" stroke-linejoin="round"/>`,
+  food: `<path d="M8.5 4v6.5M6 4v4M11 4v4M8.5 10.5V20" ${S}/><path d="M15.5 4c1.8.4 2.8 2.3 2.8 4.6 0 2-.8 3.2-1.8 3.6V20" ${S}/>`,
+  cafe: `<path d="M5.5 8.5h9.5v5.5a4.2 4.2 0 0 1-8.4 0V8.5z" ${S}/><path d="M15 9.5h1.6a2.3 2.3 0 1 1 0 4.6H15" ${S}/><path d="M6 20.5h10" ${S}/>`,
+}
+
+// 원형 아이콘 핀 — glyph(24기준)를 중앙에 축소 배치
+const glyphPin = (key, color, size = 24) => {
+  const r = size / 2
+  const inner = size - 11              // 글리프가 차지할 폭
+  const scale = inner / 24
+  const off = r - (24 * scale) / 2
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">
+       <circle cx="${r}" cy="${r}" r="${r - 1.5}" fill="${color}" stroke="white" stroke-width="2"/>
+       <g transform="translate(${off} ${off}) scale(${scale})">${GLYPH[key] || ''}</g>
+     </svg>`)
+}
 
 // Tmap jsv2는 index.html에서 동기 로드됨 — Map 클래스가 준비될 때까지만 대기
 function loadTmap() {
@@ -47,14 +76,15 @@ function popupHtml(p) {
   const badges = p.badges?.length
     ? p.badges.map((b) => `<span class="pop-badge">${BADGE_LABELS[b] || b}</span>`).join('')
     : '<span class="pop-none">접근성 배지 정보 없음</span>'
+  const cat = p.category || (p.type === 39 ? 'food' : 'tour')
   return `<div class="pop">
     <div class="pop-title">${p.title}</div>
-    <div class="pop-type">${p.type === 12 ? '관광지' : '음식점'}</div>
+    <div class="pop-type">${CAT_LABEL[cat] || '관광지'}</div>
     <div class="pop-badges">${badges}</div>
   </div>`
 }
 
-export default function MapView({ places, course, route, center, origin, restrooms = [], lineMode = 'difficulty', hidden = false }) {
+export default function MapView({ places, course, route, center, origin, restrooms = [], lineMode = 'difficulty', hidden = false, activeFilter = null }) {
   const elRef = useRef(null)
   const mapRef = useRef(null)
   const [ready, setReady] = useState(false)
@@ -113,16 +143,23 @@ export default function MapView({ places, course, route, center, origin, restroo
     })
   }, [ready, hidden])
 
-  // 전체 장소 점 마커
+  // 전체 장소 마커 — 직관성 우선:
+  //   시설 필터 ON  → 해당 시설 아이콘 핀(크게, 30px)으로 강조
+  //   전체 탭       → 카테고리(관광지/음식점/카페) 아이콘 핀 (배지 없는 곳은 작은 점)
   useEffect(() => {
     if (!ready) return
     const T = window.Tmapv2
     clear('places')
     places.forEach((p) => {
+      const cat = p.category || (p.type === 39 ? 'food' : 'tour')
+      const color = CAT_COLOR[cat] || '#64748b'
+      const size = activeFilter ? 30 : (p.badges?.length ? 24 : 12)
+      const icon = activeFilter
+        ? glyphPin(activeFilter, color, size)
+        : (p.badges?.length ? glyphPin(cat, color, size) : dotIcon(color, size / 2))
       const m = new T.Marker({
         position: new T.LatLng(p.lat, p.lng),
-        icon: dotIcon(TYPE_COLOR[p.type] || '#64748b', p.badges?.length ? 6 : 4),
-        iconSize: new T.Size(12, 12),
+        icon, iconSize: new T.Size(size, size),
         map: mapRef.current,
         title: p.title,
       })
@@ -131,7 +168,20 @@ export default function MapView({ places, course, route, center, origin, restroo
       )
       overlaysRef.current.places.push(m)
     })
-  }, [ready, places])
+
+    // 시설 필터를 켜면 해당 장소가 전부 보이도록 지도 범위를 맞춘다 —
+    // 현재 줌 유지 시 범위 밖 장소가 안 보여 "필터가 고장난 것"처럼 보이는 문제 방지.
+    // (fitBounds는 SDK 버그가 있어 중심·줌 직접 계산)
+    if (activeFilter && places.length > 0) {
+      const lats = places.map((p) => p.lat), lngs = places.map((p) => p.lng)
+      const minLat = Math.min(...lats), maxLat = Math.max(...lats)
+      const minLng = Math.min(...lngs), maxLng = Math.max(...lngs)
+      const spanKm = Math.max((maxLat - minLat) * 111, (maxLng - minLng) * 88)
+      const zoom = spanKm > 8 ? 12 : spanKm > 4 ? 13 : spanKm > 2 ? 14 : spanKm > 0.8 ? 15 : 16
+      mapRef.current.setCenter(new T.LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2))
+      mapRef.current.setZoom(zoom)
+    }
+  }, [ready, places, activeFilter])
 
   // 코스 번호 핀
   useEffect(() => {
