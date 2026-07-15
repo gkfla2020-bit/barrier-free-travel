@@ -33,17 +33,30 @@ class Waypoint(BaseModel):
 
 class RouteRequest(BaseModel):
     waypoints: list[Waypoint] = Field(min_length=2)
+    mode: str = "walk"  # walk | transit
+
+
+class TransitSegment(BaseModel):
+    mode: str  # walk | bus | subway
+    name: str = ""  # 노선명 (예: 수도권 3호선, 272번 버스)
+    polyline: list[list[float]]
+    distance: int = 0  # m
+    duration: int = 0  # 초
+    stations: list[str] = []
+    color: str = ""  # 지하철 노선색 / 버스 녹색 (지도 렌더용)
 
 
 class RouteLeg(BaseModel):
     polyline: list[list[float]]  # [[lat, lng], ...]
-    distance: int  # m
-    duration: int  # 초
+    distance: int  # m — 대중교통 leg에서는 '도보' 거리만 (이동약자 핵심 지표)
+    duration: int  # 초 — 탑승 시간 포함 전체
     guides: list[str]
     stairsPossible: bool = False
     fallback: bool = False
     difficulty: str = "쉬움"  # 쉬움 | 중간 | 어려움 (worst-element 방식)
     reasons: list[str] = []
+    mode: str = "walk"  # walk | transit
+    segments: list[TransitSegment] = []  # transit leg의 구간 분해
 
 
 class RouteOut(BaseModel):

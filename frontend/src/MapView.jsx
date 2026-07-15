@@ -128,8 +128,8 @@ export default function MapView({ places, course, route }) {
     const T = window.Tmapv2
     clear('route')
     let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180, hasPoint = false
-    route?.legs?.forEach((leg) => {
-      const path = leg.polyline.map(([lat, lng]) => {
+    const toPath = (coords) =>
+      coords.map(([lat, lng]) => {
         if (lat < minLat) minLat = lat
         if (lat > maxLat) maxLat = lat
         if (lng < minLng) minLng = lng
@@ -137,16 +137,30 @@ export default function MapView({ places, course, route }) {
         hasPoint = true
         return new T.LatLng(lat, lng)
       })
-      const DIFF_COLOR = { 어려움: '#dc2626', 중간: '#f59e0b' }
-      const line = new T.Polyline({
-        path,
-        strokeColor: DIFF_COLOR[leg.difficulty] || '#2563eb',
-        strokeWeight: 6,
-        strokeStyle: leg.stairsPossible ? 'dash' : 'solid', // 점선 = 계단 가능성
+    const DIFF_COLOR = { 어려움: '#dc2626', 중간: '#f59e0b' }
+    const addLine = (coords, color, dash, weight = 6) => {
+      if (coords.length < 2) return
+      overlaysRef.current.route.push(new T.Polyline({
+        path: toPath(coords),
+        strokeColor: color,
+        strokeWeight: weight,
+        strokeStyle: dash ? 'dash' : 'solid',
         strokeOpacity: 90,
         map: mapRef.current,
-      })
-      overlaysRef.current.route.push(line)
+      }))
+    }
+    route?.legs?.forEach((leg) => {
+      if (leg.segments?.length) {
+        // 대중교통 leg: 도보(점선·난이도색) / 지하철(노선색) / 버스(녹색) 구간별로
+        leg.segments.forEach((s) =>
+          s.mode === 'walk'
+            ? addLine(s.polyline, DIFF_COLOR[leg.difficulty] || '#2563eb', true)
+            : addLine(s.polyline, s.color || '#7c3aed', false, 7),
+        )
+      } else {
+        addLine(leg.polyline, DIFF_COLOR[leg.difficulty] || '#2563eb',
+                leg.stairsPossible) // 점선 = 계단 가능성
+      }
     })
     if (hasPoint) {
       const spanKm = Math.max((maxLat - minLat) * 111, (maxLng - minLng) * 88)

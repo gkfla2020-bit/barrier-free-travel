@@ -61,6 +61,7 @@ export default function App() {
   const [route, setRoute] = useState(null)
   const [loading, setLoading] = useState(false)
   const [survey, setSurvey] = useState(true) // 첫 화면 = 페르소나 설문 (스펙 1단계)
+  const [travelMode, setTravelMode] = useState('walk') // walk | transit
   const [deck, setDeck] = useState(null) // [{place, detail}] — 카드 스와이프 후보
   const [persona, setPersona] = useState(null) // {type, badges[], tastes[]}
   const [mapFilter, setMapFilter] = useState(null) // 지도 시설 필터 (badge 키)
@@ -69,6 +70,31 @@ export default function App() {
     () => Object.fromEntries(places.map((p) => [p.contentId, p])),
     [places],
   )
+
+  const loadRoute = async (resolved, mode = travelMode) => {
+    const r = await postRoute(
+      resolved.map((c) => ({ lat: c.place.lat, lng: c.place.lng, name: c.place.title })),
+      mode,
+    )
+    setRoute(r)
+    return r
+  }
+
+  // 도보만 ↔ 대중교통 포함 전환 — 코스가 있으면 즉시 재탐색
+  const switchMode = async (mode) => {
+    if (mode === travelMode) return
+    setTravelMode(mode)
+    if (course.length < 2) return
+    setLoading(true)
+    try {
+      const r = await loadRoute(course, mode)
+      setMessages((m) => [...m, { role: 'assistant', content: routeSummary(r, course) }])
+    } catch {
+      setMessages((m) => [...m, { role: 'assistant', content: '⚠️ 경로 조회에 실패했어요. 잠시 후 다시 시도해주세요.' }])
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
     fetchAllPlaces().then(setPlaces).catch(() => {
@@ -94,10 +120,7 @@ export default function App() {
       setMessages((m) => [...m, { role: 'assistant', content: res.reply, course: resolved.length ? resolved : undefined }])
 
       if (resolved.length >= 2) {
-        const r = await postRoute(
-          resolved.map((c) => ({ lat: c.place.lat, lng: c.place.lng, name: c.place.title })),
-        )
-        setRoute(r)
+        const r = await loadRoute(resolved)
         setMessages((m) => [...m, { role: 'assistant', content: routeSummary(r, resolved) }])
       }
     } catch {
@@ -153,8 +176,7 @@ export default function App() {
       course: resolved,
     }])
     try {
-      const r = await postRoute(resolved.map((c) => ({ lat: c.place.lat, lng: c.place.lng, name: c.place.title })))
-      setRoute(r)
+      const r = await loadRoute(resolved)
       setMessages((m) => [...m, { role: 'assistant', content: routeSummary(r, resolved) }])
     } catch {
       setMessages((m) => [...m, { role: 'assistant', content: '⚠️ 경로 조회에 실패했어요. 잠시 후 다시 시도해주세요.' }])
@@ -186,6 +208,14 @@ export default function App() {
               설문으로 맞춤 코스 시작하기 <span>이동 조건 → 후보 카드 → 자동 코스</span>
             </button>
             <ChatPanel messages={messages} loading={loading} onSend={handleSend} course={course} />
+            {course.length >= 2 && (
+              <div className="mode-toggle" role="group" aria-label="이동 방법 선택">
+                <button className={travelMode === 'walk' ? 'on' : ''}
+                        onClick={() => switchMode('walk')} disabled={loading}>도보만</button>
+                <button className={travelMode === 'transit' ? 'on' : ''}
+                        onClick={() => switchMode('transit')} disabled={loading}>대중교통 포함</button>
+              </div>
+            )}
             <RouteSteps route={route} course={course} />
           </>
         )}

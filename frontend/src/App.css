@@ -223,3 +223,17 @@ body { font-family: 'Apple SD Gothic Neo', Pretendard, system-ui, sans-serif; co
 .p-chip { display: inline-flex; align-items: center; gap: 5px; }
 .p-chip svg { color: #64748b; }
 .p-chip.on svg { color: #fff; }
+
+/* ── 대중교통 모드 ─────────────────────────────────── */
+.mode-toggle { display: flex; gap: 6px; margin: 0 0 10px; }
+.mode-toggle button {
+  flex: 1; border: 1px solid #cbd5e1; background: #fff; color: #334155;
+  border-radius: 10px; padding: 8px 10px; font-size: 13px; cursor: pointer;
+}
+.mode-toggle button.on { background: #1d4ed8; border-color: #1d4ed8; color: #fff; font-weight: 700; }
+.mode-toggle button:disabled { opacity: .55; cursor: wait; }
+.seg-mode {
+  background: #ede9fe; color: #6d28d9; border-radius: 8px;
+  padding: 1px 7px; font-size: 11px; font-weight: 700; margin-left: 6px; flex: none;
+}
+.leg li.transit { color: #0f766e; font-weight: 600; }

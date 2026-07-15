@@ -19,12 +19,13 @@ export function DiffChip({ level, reasons }) {
 export default function RouteSteps({ route, course }) {
   if (!route) return null
   const anyStairs = route.legs.some((l) => l.stairsPossible)
+  const anyTransit = route.legs.some((l) => l.mode === 'transit')
 
   return (
     <section className="steps">
       <div className={`steps-total ${anyStairs ? 'warn' : 'ok'}`}>
         <strong>
-          도보 {fmt(route.totalDistance)} · {fmtT(route.totalDuration)}
+          도보 {fmt(route.totalDistance)} · {anyTransit ? '전체 ' : ''}{fmtT(route.totalDuration)}
           {' '}<DiffChip level={route.difficulty} reasons={route.reasons} />
         </strong>
         <span>
@@ -41,13 +42,14 @@ export default function RouteSteps({ route, course }) {
             <summary>
               <span className={`leg-line ${DIFF_CLASS[leg.difficulty] || 'easy'}${leg.stairsPossible ? ' dashed' : ''}`} />
               {from} → {to}
+              {leg.mode === 'transit' && <span className="seg-mode">대중교통</span>}
               <span className="leg-meta">
-                {fmt(leg.distance)} · {fmtT(leg.duration)} <DiffChip level={leg.difficulty} reasons={leg.reasons} />
+                {leg.mode === 'transit' ? `도보 ${fmt(leg.distance)}` : fmt(leg.distance)} · {fmtT(leg.duration)} <DiffChip level={leg.difficulty} reasons={leg.reasons} />
               </span>
             </summary>
             <ul>
               {leg.guides.map((g, j) => (
-                <li key={j} className={g.startsWith('⚠️') ? 'warn' : ''}>
+                <li key={j} className={g.startsWith('⚠️') ? 'warn' : /^\[(지하철|버스)\]/.test(g) ? 'transit' : ''}>
                   <span className="icon">{stepIcon(g)}</span>{g}
                 </li>
               ))}

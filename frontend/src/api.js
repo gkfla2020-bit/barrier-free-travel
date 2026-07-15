@@ -22,11 +22,11 @@ export const postChat = (message) =>
     body: JSON.stringify({ message }),
   }).then(json)
 
-export const postRoute = (waypoints) =>
+export const postRoute = (waypoints, mode = 'walk') =>
   fetch('/api/route', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ waypoints }),
+    body: JSON.stringify({ waypoints, mode }),
   }).then(json)
 
 export const BADGE_LABELS = {
