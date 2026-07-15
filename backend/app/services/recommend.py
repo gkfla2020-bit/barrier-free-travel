@@ -4,6 +4,7 @@
 실패 시 fixtures/demo_chat.json 폴백.
 """
 import json
+import math
 import os
 from pathlib import Path
 
@@ -44,7 +45,7 @@ SYSTEM = """너는 이동약자(휠체어 이용자, 고령자, 유모차 가족
 
 규칙:
 1. 반드시 아래 후보 목록에 있는 contentId만 사용한다. 목록 밖 장소는 절대 추천하지 않는다.
-2. 코스는 3~5곳. 좌표(lat/lng)가 서로 가까운 곳끼리 이동 순서를 구성한다.
+2. 코스는 3~5곳. 좌표(lat/lng) 기준 서로 가까운 장소만 골라, 인접 장소 간 도보 1km 이내·코스 전체 도보 3km 이내가 되도록 구성한다. 멀리 떨어진 장소는 아무리 좋아도 제외한다 (이동약자에게 긴 도보는 치명적).
 3. 각 장소의 reason에는 badges의 접근성 근거를 인용한다 (예: "휠체어 대여와 장애인 화장실이 확인된 곳").
 4. 관광지 사이에 음식점을 1곳 이상 배치해 반나절~하루 흐름을 만든다.
 5. reply는 한국어 2~3문장으로 코스의 특징을 요약한다."""
@@ -53,9 +54,15 @@ SYSTEM = """너는 이동약자(휠체어 이용자, 고령자, 유모차 가족
 def _candidates(message: str) -> list[dict]:
     required = [b for kw, b in BADGE_KEYWORDS.items() if kw in message]
 
+    # 덤프 중심(경복궁)에서 가까운 순으로 후보를 좁힌다 — 이동약자 코스는 밀집이 생명.
+    # LLM 프롬프트 지시만으론 먼 장소를 완전히 못 막아서 후보 단계에서 차단.
+    lng0, lat0 = store.META.get("center", [126.977, 37.5788])
+    ordered = sorted(store.PLACES.values(),
+                     key=lambda p: math.hypot((p["lat"] - lat0) * 111, (p["lng"] - lng0) * 88))
+
     def pick(type_: int, n: int, strict: bool) -> list[dict]:
         out = []
-        for p in store.PLACES.values():
+        for p in ordered:
             if p["type"] != type_:
                 continue
             if strict and not all(b in p["badges"] for b in required):
