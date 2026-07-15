@@ -72,10 +72,10 @@ def _candidates(message: str) -> list[dict]:
                 break
         return out
 
-    tours = pick(12, 15, strict=True)
-    foods = pick(39, 10, strict=True)
+    tours = pick(12, 10, strict=True)
+    foods = pick(39, 6, strict=True)
     if len(tours) + len(foods) < 5:  # 조건이 너무 빡빡하면 완화 (배지는 reason에서 걸러짐)
-        tours, foods = pick(12, 15, strict=False), pick(39, 10, strict=False)
+        tours, foods = pick(12, 10, strict=False), pick(39, 6, strict=False)
     return tours + foods
 
 

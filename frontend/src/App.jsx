@@ -2,8 +2,28 @@ import { useEffect, useMemo, useState } from 'react'
 import MapView from './MapView'
 import ChatPanel from './ChatPanel'
 import RouteSteps from './RouteSteps'
-import { fetchAllPlaces, postChat, postRoute } from './api'
+import { PersonaSurvey, CardDeck } from './PersonaDeck'
+import { fetchAllPlaces, fetchPlaceDetail, postChat, postRoute, BADGE_LABELS } from './api'
 import './App.css'
+
+const CENTER = { lat: 37.5788, lng: 126.977 } // 경복궁 (덤프 중심)
+const distKm = (a, b) => Math.hypot((a.lat - b.lat) * 111, (a.lng - b.lng) * 88)
+
+// 담은 장소들을 가까운 순서로 자동 정렬 (최근접 이웃)
+function optimizeOrder(items) {
+  if (items.length <= 2) return items
+  const start = items.reduce((s, p) => (distKm(p.place, CENTER) < distKm(s.place, CENTER) ? p : s))
+  const order = [start]
+  const rest = new Set(items.filter((i) => i !== start))
+  while (rest.size) {
+    const cur = order[order.length - 1]
+    let best = null
+    for (const p of rest) if (!best || distKm(p.place, cur.place) < distKm(best.place, cur.place)) best = p
+    order.push(best)
+    rest.delete(best)
+  }
+  return order
+}
 
 // 경로 설명은 LLM이 아니라 Tmap 실데이터에서 생성 — 계단 수·거리·시간이 100% 사실
 function routeSummary(r, course) {
@@ -39,6 +59,8 @@ export default function App() {
   const [course, setCourse] = useState([])
   const [route, setRoute] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [survey, setSurvey] = useState(false)
+  const [deck, setDeck] = useState(null) // [{place, detail}] — 카드 스와이프 후보
 
   const placeById = useMemo(
     () => Object.fromEntries(places.map((p) => [p.contentId, p])),
@@ -78,6 +100,59 @@ export default function App() {
     }
   }
 
+  // 설문(스펙 1단계) → 안전지대 필터(2단계): 조건 100% 만족 장소만, 근접순 5+2곳
+  const handleSurvey = async (persona) => {
+    setSurvey(false)
+    const required = [...new Set([
+      ...persona.badges,
+      ...(persona.type.includes('휠체어') ? ['wheelchair'] : []),
+    ])]
+    const near = (list) => [...list].sort((a, b) => distKm(a, CENTER) - distKm(b, CENTER))
+    const match = (p) => required.every((b) => p.badges.includes(b))
+    let tours = near(places.filter((p) => p.type === 12 && match(p)))
+    let foods = near(places.filter((p) => p.type === 39 && match(p)))
+    if (tours.length + foods.length < 4) { // 조건이 너무 빡빡하면 완화하되 사실대로 알림
+      tours = near(places.filter((p) => p.type === 12))
+      foods = near(places.filter((p) => p.type === 39))
+      setMessages((m) => [...m, { role: 'assistant', content: '⚠️ 모든 조건을 만족하는 곳이 부족해 일부 조건을 완화한 후보를 보여드려요. 카드의 배지를 꼭 확인해주세요.' }])
+    }
+    const cand = [...tours.slice(0, 5), ...foods.slice(0, 2)]
+    const details = await Promise.all(cand.map((p) => fetchPlaceDetail(p.contentId).catch(() => null)))
+    setDeck(cand.map((p, i) => ({ place: p, detail: details[i] })))
+    setMessages((m) => [...m, {
+      role: 'assistant',
+      content: `${persona.type} 기준, 조건(${required.map((b) => BADGE_LABELS[b] || b).join(', ') || '무장애 인증'})을 만족하는 안전지대 후보 ${cand.length}곳을 골랐어요. 카드를 넘기며 마음에 드는 곳을 담아보세요!`,
+    }])
+  }
+
+  // 카드 담기 완료(3단계) → 최근접 순 정렬 + 계단회피 경로(4단계)
+  const handleDeckDone = async (picked) => {
+    setDeck(null)
+    if (picked.length < 2) {
+      setMessages((m) => [...m, { role: 'assistant', content: '코스를 만들려면 2곳 이상 담아주세요. 설문부터 다시 시작할 수 있어요.' }])
+      return
+    }
+    const ordered = optimizeOrder(picked)
+    const resolved = ordered.map((c, i) => ({
+      contentId: c.place.contentId, order: i + 1,
+      reason: c.place.badges.map((b) => BADGE_LABELS[b]).join(' · ') || '무장애 인증 장소',
+      place: c.place,
+    }))
+    setCourse(resolved)
+    setMessages((m) => [...m, {
+      role: 'assistant',
+      content: `담은 ${picked.length}곳을 가까운 순서로 자동 정렬해 코스를 만들었어요. 계단 회피 경로를 확인할게요…`,
+      course: resolved,
+    }])
+    try {
+      const r = await postRoute(resolved.map((c) => ({ lat: c.place.lat, lng: c.place.lng, name: c.place.title })))
+      setRoute(r)
+      setMessages((m) => [...m, { role: 'assistant', content: routeSummary(r, resolved) }])
+    } catch {
+      setMessages((m) => [...m, { role: 'assistant', content: '⚠️ 경로 조회에 실패했어요. 잠시 후 다시 시도해주세요.' }])
+    }
+  }
+
   return (
     <div className="layout">
       <header className="topbar">
@@ -89,8 +164,17 @@ export default function App() {
         </span>
       </header>
       <aside className="side">
-        <ChatPanel messages={messages} loading={loading} onSend={handleSend} course={course} />
-        <RouteSteps route={route} course={course} />
+        {survey && <PersonaSurvey onSubmit={handleSurvey} onClose={() => setSurvey(false)} />}
+        {deck && <CardDeck cards={deck} onDone={handleDeckDone} onClose={() => setDeck(null)} />}
+        {!survey && !deck && (
+          <>
+            <button className="persona-cta" onClick={() => setSurvey(true)}>
+              📋 설문으로 맞춤 코스 시작하기 <span>이동 조건 → 후보 카드 → 자동 코스</span>
+            </button>
+            <ChatPanel messages={messages} loading={loading} onSend={handleSend} course={course} />
+            <RouteSteps route={route} course={course} />
+          </>
+        )}
       </aside>
       <main className="map-wrap">
         <MapView places={places} course={course} route={route} />

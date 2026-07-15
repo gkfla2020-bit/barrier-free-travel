@@ -124,3 +124,46 @@ body { font-family: 'Apple SD Gothic Neo', Pretendard, system-ui, sans-serif; co
 .diff.easy { background: #dcfce7; color: #15803d; }
 .diff.mid { background: #fef9c3; color: #a16207; }
 .diff.hard { background: #ffe4e6; color: #be123c; }
+
+/* 설문 패널 */
+.persona-cta {
+  margin: 12px 14px 0; padding: 12px 14px; border: 1.5px dashed #0d9488; border-radius: 12px;
+  background: #f0fdfa; color: #0f766e; font-size: 13.5px; font-weight: 700; cursor: pointer;
+  display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
+}
+.persona-cta span { font-weight: 400; font-size: 11.5px; color: #64748b; }
+.persona, .deck { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; }
+.p-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.p-head strong { font-size: 14px; }
+.p-close { margin-left: auto; border: 1px solid #cbd5e1; background: #fff; border-radius: 8px;
+  padding: 5px 10px; cursor: pointer; font-size: 12px; }
+.p-close + .p-close { margin-left: 6px; }
+.p-q { font-size: 12.5px; font-weight: 700; margin: 10px 0 6px; }
+.p-q em { font-style: normal; font-weight: 400; font-size: 11px; color: #94a3b8; }
+.p-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.p-chip { font-size: 12.5px; padding: 8px 12px; border-radius: 18px; cursor: pointer;
+  border: 1px solid #cbd5e1; background: #fff; min-height: 36px; }
+.p-chip.on { background: #0f766e; border-color: #0f766e; color: #fff; font-weight: 700; }
+.p-submit { margin-top: 16px; padding: 13px; border: 0; border-radius: 12px; cursor: pointer;
+  background: #0f766e; color: #fff; font-size: 14px; font-weight: 700; }
+
+/* 카드 덱 */
+.card { border: 1px solid #e2e8f0; border-radius: 16px; background: #fff; overflow: hidden;
+  box-shadow: 0 4px 16px rgb(15 23 42 / .08); transition: transform .2s, opacity .2s; }
+.card.take { transform: translateX(60%) rotate(6deg); opacity: 0; }
+.card.toss { transform: translateX(-60%) rotate(-6deg); opacity: 0; }
+.card-img { width: 100%; height: 170px; object-fit: cover; display: block; }
+.card-img.none { display: flex; align-items: center; justify-content: center; font-size: 44px;
+  background: #f1f5f9; color: #94a3b8; }
+.card-body { padding: 12px 14px; }
+.card-title { font-size: 16px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+.card-title .ctype { font-size: 11px; color: #64748b; font-weight: 400; }
+.card-badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.badge.big { font-size: 13px; padding: 5px 11px; }
+.card-raw { list-style: none; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.card-raw li { font-size: 12px; color: #475569; }
+.card-raw b { color: #0f766e; margin-right: 4px; }
+.card-actions { display: flex; border-top: 1px solid #e2e8f0; }
+.card-actions button { flex: 1; padding: 14px; border: 0; cursor: pointer; font-size: 14.5px; font-weight: 700; }
+.card-actions .toss { background: #fff; color: #64748b; }
+.card-actions .take { background: #0f766e; color: #fff; }
