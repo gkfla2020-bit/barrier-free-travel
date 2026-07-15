@@ -1,4 +1,7 @@
+import { useEffect, useState } from 'react'
 import { departureOptions } from './departures'
+
+const DISPLAY_THRESHOLD = 3  // 이 개수를 넘으면 "더 보기"로 접는다
 
 // 출발지 선택 UI (Req 2.1, 2.3, 2.4, 2.5, 2.6)
 //
@@ -13,9 +16,15 @@ const sameOption = (a, b) =>
   !!a && !!b && a.name === b.name && a.lat === b.lat && a.lng === b.lng
 
 export default function DepartureSelector({ region, selected, myLoc, onSelect }) {
+  const [expanded, setExpanded] = useState(false)
+  // 지역이 바뀌면 접힘 상태로 초기화
+  useEffect(() => { setExpanded(false) }, [region?.id])
+
   if (!region) return null
 
   const options = departureOptions(region, myLoc)
+  const overflow = options.length > DISPLAY_THRESHOLD
+  const shown = overflow && !expanded ? options.slice(0, DISPLAY_THRESHOLD) : options
 
   return (
     <section className="dep-selector" aria-label="출발지 선택">
@@ -25,7 +34,7 @@ export default function DepartureSelector({ region, selected, myLoc, onSelect })
       </div>
 
       <div className="dep-options" role="radiogroup" aria-label="출발지 옵션">
-        {options.map((opt) => {
+        {shown.map((opt) => {
           const on = sameOption(selected, opt)
           const isMyLoc = opt.type === '내 위치'
           return (
@@ -46,6 +55,12 @@ export default function DepartureSelector({ region, selected, myLoc, onSelect })
           )
         })}
       </div>
+
+      {overflow && (
+        <button type="button" className="dep-more" onClick={() => setExpanded((v) => !v)}>
+          {expanded ? '접기' : `더 보기 (${options.length - DISPLAY_THRESHOLD})`}
+        </button>
+      )}
 
       {!selected && (
         <p className="dep-notice" role="status">

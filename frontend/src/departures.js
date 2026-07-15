@@ -143,3 +143,118 @@ export function departureOptions(region, myLoc) {
     { name: myLoc.name || '내 위치', lat: myLoc.lat, lng: myLoc.lng, type: '내 위치' },
   ]
 }
+
+// ---------------------------------------------------------------------------
+// 채팅 기반 출발지 인식 (Req 3, 4)
+//
+// 사용자가 "광화문역에서 출발", "시청에서 시작", "서울역"처럼 입력하면 활성 지역의
+// 출발지 후보에서 이름/별칭/부분 일치로 인식한다. 순수 함수로 유지해 테스트가 쉽다.
+
+// 출발 의도 표현 — 제거(정규화) 대상이자 intent 판정 토큰
+const INTENT_TOKENS = ['출발', '시작', '갈게', '갈래', '할게', '부터']
+// 조사/후위 표현 — 정규화 시 제거
+const PARTICLES = ['에서', '에', '서', '으로', '로', '요']
+// 접미사 동등화 — "시청"이 "시청역"과 매칭되도록
+const SUFFIXES = ['역', '터미널', '시청']
+
+/**
+ * 매칭용 정규화 문자열을 만든다 (Req 3.4).
+ * - 앞뒤/내부 공백 정규화
+ * - 출발 의도어·조사 제거
+ * - 후행 접미사(역/터미널/시청) 제거로 동등화 (멱등)
+ * - 라틴 문자만 소문자화
+ * 빈 값/비문자열은 ''를 반환(방어적).
+ */
+export function normalizeDeparture(text) {
+  if (typeof text !== 'string') return ''
+  let s = text.trim().replace(/\s+/g, ' ')
+  if (!s) return ''
+  // 의도어·조사 제거 (긴 토큰 우선)
+  for (const tok of [...INTENT_TOKENS, ...PARTICLES].sort((a, b) => b.length - a.length)) {
+    s = s.split(tok).join('')
+  }
+  s = s.trim()
+  // 후행 접미사 반복 제거 (멱등 보장)
+  let changed = true
+  while (changed) {
+    changed = false
+    for (const suf of SUFFIXES) {
+      if (s.length > suf.length && s.endsWith(suf)) {
+        s = s.slice(0, -suf.length)
+        changed = true
+      }
+    }
+  }
+  // 라틴 문자만 소문자화 (한글은 대소문자 없음)
+  return s.replace(/[A-Z]/g, (c) => c.toLowerCase()).trim()
+}
+
+const _hasIntent = (text) => {
+  const t = String(text || '')
+  return INTENT_TOKENS.some((k) => t.includes(k)) || /에서|부터/.test(t)
+}
+
+const _aliasList = (dep) =>
+  Array.isArray(dep?.aliases) ? dep.aliases.filter((a) => typeof a === 'string') : []
+
+/**
+ * 채팅 입력에서 활성 지역의 출발지를 인식한다 (Req 3, 4).
+ *
+ * 정밀도 우선순위: (1) 이름 정확 일치 → (2) 별칭 정확 일치 → (3) 부분 문자열 일치.
+ * 가장 높은 정밀도 단계의 후보 집합을 결과로 삼고 중복 제거 후 개수로 분류한다.
+ *
+ * @returns {{status:'single'|'multiple'|'none'|'notfound', matches:Array, intent:boolean}}
+ */
+export function recognizeDeparture(text, region) {
+  const intent = _hasIntent(text)
+  const empty = { status: intent ? 'notfound' : 'none', matches: [], intent }
+  if (typeof text !== 'string' || !text.trim() || !region) return empty
+
+  const deps = validDepartures(region)
+  if (!deps.length) return empty
+
+  const key = normalizeDeparture(text)
+  if (!key) return empty
+
+  const exact = [], aliasHit = [], partial = []
+  for (const dep of deps) {
+    const nk = normalizeDeparture(dep.name)
+    if (nk && (key === nk || key.includes(nk) || nk.includes(key))) {
+      // 이름 정확/포함
+      if (key === nk) exact.push(dep)
+      else partial.push(dep)
+    }
+    for (const al of _aliasList(dep)) {
+      const ak = normalizeDeparture(al)
+      if (!ak) continue
+      if (key === ak) aliasHit.push(dep)
+      else if (key.includes(ak) || ak.includes(key)) partial.push(dep)
+    }
+  }
+
+  // 정밀도 높은 단계부터 채택
+  let picked = exact.length ? exact : aliasHit.length ? aliasHit : partial
+  // 중복 제거 (같은 출발지)
+  const seen = new Set()
+  picked = picked.filter((d) => {
+    const id = `${d.name}@${d.lat},${d.lng}`
+    if (seen.has(id)) return false
+    seen.add(id)
+    return true
+  })
+
+  if (picked.length === 1) return { status: 'single', matches: picked, intent }
+  if (picked.length >= 2) return { status: 'multiple', matches: picked, intent }
+  return empty
+}
+
+/**
+ * 경로 출발지 우선순위 결정 (Req 1.6, 6.4, 6.5) — 순수 함수.
+ * 선택 출발지 > 내 위치(지역 내부) > 유효 departures[0] > 지역 기본 origin.
+ */
+export function resolveOrigin({ selectedDeparture, myLoc, region }) {
+  if (selectedDeparture) return selectedDeparture
+  if (isInsideBbox(myLoc, region)) return myLoc
+  const valid = validDepartures(region)
+  return valid[0] || region?.origin
+}

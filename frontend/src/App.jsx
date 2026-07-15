@@ -5,7 +5,7 @@ import RouteSteps from './RouteSteps'
 import { PersonaSurvey, CardDeck } from './PersonaDeck'
 import { Logo, BadgeIcon } from './Icons'
 import { fetchAllPlaces, fetchPlaceDetail, postChat, postRoute, postRestroomCoverage, BADGE_LABELS } from './api'
-import { validDepartures } from './departures'
+import { validDepartures, recognizeDeparture } from './departures'
 import DepartureSelector from './DepartureSelector'
 import './App.css'
 
@@ -21,24 +21,28 @@ const REGIONS = [
   { id: 'seoul', name: '서울 · 경복궁 일대', ready: true,
     center: { lat: 37.5788, lng: 126.977 }, bbox: [37.4, 37.7, 126.8, 127.2],
     departures: [
-      { name: '광화문역', lat: 37.5717, lng: 126.9769, type: '지하철역' },
-      { name: '서울역', lat: 37.5547, lng: 126.9706, type: '지하철역' },
+      { name: '광화문역', lat: 37.5717, lng: 126.9769, type: '지하철역', aliases: ['광화문'] },
+      { name: '서울역', lat: 37.5547, lng: 126.9706, type: '지하철역', aliases: ['서울역'] },
+      { name: '시청역', lat: 37.5657, lng: 126.9769, type: '지하철역', aliases: ['시청', '서울시청'] },
+      { name: '종로3가역', lat: 37.5714, lng: 126.9917, type: '지하철역', aliases: ['종로', '종로3가'] },
     ],
     get origin() { return this.departures[0] },
     keywords: ['서울', '경복궁', '광화문', '종로', '북촌', '덕수궁', '인사동'] },
   { id: 'gyeongju', name: '경주 · 대릉원', ready: true,
     center: { lat: 35.837, lng: 129.216 }, bbox: [35.65, 36.05, 129.0, 129.45],
     departures: [
-      { name: '경주시외버스터미널', lat: 35.8419, lng: 129.2089, type: '버스터미널' },
-      { name: '대릉원 공영주차장', lat: 35.8365, lng: 129.2095, type: '주차장' },
+      { name: '경주시외버스터미널', lat: 35.8419, lng: 129.2089, type: '버스터미널', aliases: ['경주터미널', '시외버스터미널'] },
+      { name: '대릉원 공영주차장', lat: 35.8365, lng: 129.2095, type: '주차장', aliases: ['대릉원'] },
+      { name: '경주고속버스터미널', lat: 35.8442, lng: 129.2095, type: '버스터미널', aliases: ['고속버스터미널'] },
     ],
     get origin() { return this.departures[0] },
     keywords: ['경주', '대릉원', '첨성대', '불국사', '황리단길', '동궁'] },
   { id: 'busan', name: '부산 · 해운대', ready: true,
     center: { lat: 35.1587, lng: 129.1604 }, bbox: [35.05, 35.28, 129.05, 129.30],
     departures: [
-      { name: '해운대역', lat: 35.1637, lng: 129.1586, type: '지하철역' },
-      { name: '센텀시티역', lat: 35.1691, lng: 129.1305, type: '지하철역' },
+      { name: '해운대역', lat: 35.1637, lng: 129.1586, type: '지하철역', aliases: ['해운대'] },
+      { name: '센텀시티역', lat: 35.1691, lng: 129.1305, type: '지하철역', aliases: ['센텀', '센텀시티'] },
+      { name: '벡스코역', lat: 35.1690, lng: 129.1349, type: '지하철역', aliases: ['벡스코'] },
     ],
     get origin() { return this.departures[0] },
     keywords: ['부산', '해운대', '광안리'],
@@ -46,8 +50,9 @@ const REGIONS = [
   { id: 'jeonju', name: '전주 · 한옥마을', ready: true,
     center: { lat: 35.8143, lng: 127.1524 }, bbox: [35.70, 35.92, 127.05, 127.28],
     departures: [
-      { name: '한옥마을 공영주차장', lat: 35.8172, lng: 127.1479, type: '주차장' },
-      { name: '전주고속버스터미널', lat: 35.8253, lng: 127.1447, type: '버스터미널' },
+      { name: '한옥마을 공영주차장', lat: 35.8172, lng: 127.1479, type: '주차장', aliases: ['한옥마을'] },
+      { name: '전주고속버스터미널', lat: 35.8253, lng: 127.1447, type: '버스터미널', aliases: ['전주터미널', '고속버스터미널'] },
+      { name: '전주시외버스터미널', lat: 35.8245, lng: 127.1440, type: '버스터미널', aliases: ['시외버스터미널'] },
     ],
     get origin() { return this.departures[0] },
     keywords: ['전주', '한옥마을'],
@@ -55,48 +60,54 @@ const REGIONS = [
   { id: 'gangneung', name: '강릉 · 경포', ready: true,
     center: { lat: 37.7956, lng: 128.8961 }, bbox: [37.68, 37.92, 128.78, 129.02],
     departures: [
-      { name: '강릉역', lat: 37.7638, lng: 128.8994, type: '버스터미널' },
-      { name: '강릉시외버스터미널', lat: 37.7639, lng: 128.8967, type: '버스터미널' },
+      { name: '강릉역', lat: 37.7638, lng: 128.8994, type: '버스터미널', aliases: ['강릉역'] },
+      { name: '강릉시외버스터미널', lat: 37.7639, lng: 128.8967, type: '버스터미널', aliases: ['시외버스터미널', '강릉터미널'] },
+      { name: '경포해변 주차장', lat: 37.7956, lng: 128.8961, type: '주차장', aliases: ['경포', '경포해변'] },
     ],
     get origin() { return this.departures[0] },
     keywords: ['강릉', '경포', '안목'] },
   { id: 'yeosu', name: '여수 · 오동도', ready: true,
     center: { lat: 34.7406, lng: 127.7669 }, bbox: [34.63, 34.87, 127.63, 127.87],
     departures: [
-      { name: '여수엑스포역', lat: 34.7526, lng: 127.748, type: '버스터미널' },
-      { name: '여수종합버스터미널', lat: 34.7607, lng: 127.6622, type: '버스터미널' },
+      { name: '여수엑스포역', lat: 34.7526, lng: 127.748, type: '버스터미널', aliases: ['엑스포', '여수엑스포'] },
+      { name: '여수종합버스터미널', lat: 34.7607, lng: 127.6622, type: '버스터미널', aliases: ['여수터미널', '종합버스터미널'] },
+      { name: '이순신광장 공영주차장', lat: 34.7377, lng: 127.7419, type: '주차장', aliases: ['이순신광장'] },
     ],
     get origin() { return this.departures[0] },
     keywords: ['여수', '오동도', '낭만포차'] },
   { id: 'jeju', name: '제주 · 제주시', ready: true,
     center: { lat: 33.5138, lng: 126.5219 }, bbox: [33.4, 33.62, 126.38, 126.67],
     departures: [
-      { name: '제주버스터미널', lat: 33.4996, lng: 126.5145, type: '버스터미널' },
-      { name: '제주국제공항 주차장', lat: 33.5104, lng: 126.4914, type: '주차장' },
+      { name: '제주버스터미널', lat: 33.4996, lng: 126.5145, type: '버스터미널', aliases: ['제주터미널', '버스터미널'] },
+      { name: '제주국제공항 주차장', lat: 33.5104, lng: 126.4914, type: '주차장', aliases: ['제주공항', '공항'] },
+      { name: '동문시장 공영주차장', lat: 33.5127, lng: 126.5270, type: '주차장', aliases: ['동문시장'] },
     ],
     get origin() { return this.departures[0] },
     keywords: ['제주', '용두암', '동문시장'] },
   { id: 'suwon', name: '수원 · 화성', ready: true,
     center: { lat: 37.2818, lng: 127.0137 }, bbox: [37.2, 37.36, 126.93, 127.1],
     departures: [
-      { name: '팔달문', lat: 37.278, lng: 127.0163, type: '주차장' },
-      { name: '수원역', lat: 37.2656, lng: 127.0006, type: '지하철역' },
+      { name: '팔달문', lat: 37.278, lng: 127.0163, type: '주차장', aliases: ['팔달문', '행궁', '화성행궁'] },
+      { name: '수원역', lat: 37.2656, lng: 127.0006, type: '지하철역', aliases: ['수원역'] },
+      { name: '화서역', lat: 37.2857, lng: 126.9967, type: '지하철역', aliases: ['화서'] },
     ],
     get origin() { return this.departures[0] },
     keywords: ['수원', '화성행궁', '행궁'] },
   { id: 'incheon', name: '인천 · 개항장', ready: true,
     center: { lat: 37.4736, lng: 126.6216 }, bbox: [37.4, 37.55, 126.55, 126.72],
     departures: [
-      { name: '인천역', lat: 37.4766, lng: 126.6169, type: '지하철역' },
-      { name: '인천종합버스터미널', lat: 37.4419, lng: 126.7009, type: '버스터미널' },
+      { name: '인천역', lat: 37.4766, lng: 126.6169, type: '지하철역', aliases: ['인천역', '차이나타운'] },
+      { name: '동인천역', lat: 37.4735, lng: 126.6323, type: '지하철역', aliases: ['동인천'] },
+      { name: '월미도 주차장', lat: 37.4757, lng: 126.5977, type: '주차장', aliases: ['월미도'] },
     ],
     get origin() { return this.departures[0] },
     keywords: ['인천', '개항장', '월미도', '차이나타운'] },
   { id: 'daegu', name: '대구 · 근대골목', ready: true,
     center: { lat: 35.866, lng: 128.595 }, bbox: [35.8, 35.94, 128.52, 128.68],
     departures: [
-      { name: '반월당역', lat: 35.8659, lng: 128.5934, type: '지하철역' },
-      { name: '동대구역', lat: 35.8797, lng: 128.6285, type: '지하철역' },
+      { name: '반월당역', lat: 35.8659, lng: 128.5934, type: '지하철역', aliases: ['반월당'] },
+      { name: '동대구역', lat: 35.8797, lng: 128.6285, type: '지하철역', aliases: ['동대구'] },
+      { name: '중앙로역', lat: 35.8703, lng: 128.5952, type: '지하철역', aliases: ['중앙로', '동성로'] },
     ],
     get origin() { return this.departures[0] },
     keywords: ['대구', '근대골목', '김광석', '동성로'] },
@@ -341,6 +352,27 @@ export default function App() {
     if (active.id !== region.id) {
       switchRegion(active)
       setMessages((m) => [...m, { role: 'assistant', content: `${active.name}(으)로 안내할게요!` }])
+    }
+
+    // 채팅 기반 출발지 인식 (Req 3, 4) — 지역 전환 후 활성 지역 기준으로 인식한다.
+    const rec = recognizeDeparture(text, active)
+    if (rec.status === 'single') {
+      setSelectedDeparture(rec.matches[0])
+      setMessages((m) => [...m, { role: 'assistant', content: `출발지를 '${rec.matches[0].name}'(으)로 설정했어요.` }])
+      return
+    }
+    if (rec.status === 'multiple') {
+      const names = rec.matches.map((d) => d.name).join(', ')
+      setMessages((m) => [...m, { role: 'assistant', content: `여러 출발지가 매칭돼요: ${names}. 이 중에서 하나만 말씀해주세요.` }])
+      return
+    }
+    if (rec.status === 'notfound') {
+      const names = validDepartures(active).map((d) => d.name).join(', ')
+      const head = active.name.split(' ·')[0]
+      setMessages((m) => [...m, { role: 'assistant', content: names
+        ? `'${head}'에서 고를 수 있는 출발지: ${names}. 이 중에서 말씀해주세요.`
+        : `'${head}'에는 등록된 출발지가 없어요.` }])
+      return
     }
 
     setLoading(true)
