@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { BADGE_LABELS } from './api'
+import { renderablePolylineCount } from './mapdraw'
 
 const TYPE_COLOR = { 12: '#0d9488', 39: '#ea580c' } // 관광지 teal, 음식점 orange
 
@@ -17,6 +18,17 @@ const dotIcon = (color, r = 6) =>
   encodeURIComponent(
     `<svg xmlns="http://www.w3.org/2000/svg" width="${r * 2}" height="${r * 2}">
        <circle cx="${r}" cy="${r}" r="${r - 1.5}" fill="${color}" stroke="white" stroke-width="1.5"/>
+     </svg>`,
+  )
+
+// 화장실 커버리지 마커 — 장소 점(원)·코스 핀과 구분되는 작은 사각형 아이콘
+const restroomIcon = (color = '#2563eb') =>
+  'data:image/svg+xml;charset=utf-8,' +
+  encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18">
+       <rect x="2" y="2" width="14" height="14" rx="3" fill="${color}" stroke="white" stroke-width="2"/>
+       <text x="9" y="13" text-anchor="middle" font-size="9" font-weight="bold" fill="white"
+             font-family="sans-serif">WC</text>
      </svg>`,
   )
 
@@ -41,11 +53,11 @@ function popupHtml(p) {
   </div>`
 }
 
-export default function MapView({ places, course, route, center, origin }) {
+export default function MapView({ places, course, route, center, origin, restrooms = [] }) {
   const elRef = useRef(null)
   const mapRef = useRef(null)
   const [ready, setReady] = useState(false)
-  const overlaysRef = useRef({ places: [], course: [], route: [], origin: [] })
+  const overlaysRef = useRef({ places: [], course: [], route: [], origin: [], restrooms: [] })
   const infoRef = useRef(null)
 
   const clear = (group) => {
@@ -145,6 +157,26 @@ export default function MapView({ places, course, route, center, origin }) {
     overlaysRef.current.origin.push(m)
   }, [ready, origin?.lat, origin?.lng])
 
+  // 화장실 커버리지 마커 (Req 6.6, 7.6) — {name, lat, lng} 좌표에 WC 마커
+  useEffect(() => {
+    if (!ready) return
+    const T = window.Tmapv2
+    clear('restrooms')
+    ;(restrooms || []).forEach((r) => {
+      const lat = r?.lat, lng = r?.lng
+      if (typeof lat !== 'number' || typeof lng !== 'number') return
+      const m = new T.Marker({
+        position: new T.LatLng(lat, lng),
+        icon: restroomIcon('#2563eb'),
+        iconSize: new T.Size(18, 18),
+        map: mapRef.current,
+        zIndex: 900,
+        title: r.name || '접근 가능 화장실',
+      })
+      overlaysRef.current.restrooms.push(m)
+    })
+  }, [ready, restrooms])
+
   // 경로 폴리라인 — Tmap 좌표를 Tmap 지도에 그리므로 도로에 정확히 붙는다
   // ⚠️ Tmapv2.fitBounds는 빈 LatLngBounds+extend 조합에서 (27,-180)으로 날아가는
   //    버그가 있어 직접 중심·줌을 계산한다.
@@ -176,17 +208,56 @@ export default function MapView({ places, course, route, center, origin }) {
     }
     route?.legs?.forEach((leg) => {
       if (leg.segments?.length) {
-        // 대중교통 leg: 도보(점선·난이도색) / 지하철(노선색) / 버스(녹색) 구간별로
-        leg.segments.forEach((s) =>
-          s.mode === 'walk'
-            ? addLine(s.polyline, DIFF_COLOR[leg.difficulty] || '#2563eb', true)
-            : addLine(s.polyline, s.color || '#7c3aed', false, 7),
-        )
+        // 대중교통 leg: 도보(점선·난이도색) / 지하철(노선색) / 버스(녹색) 구간별로.
+        // approx=true(정류장 간 개략 직선)면 점선으로 그려 실제 도로가 아님을 신호하고
+        // 정류장 좌표에 작은 마커를 찍어 "정류장 to 정류장"임을 명확히 한다.
+        leg.segments.forEach((s) => {
+          if (s.mode === 'walk') {
+            addLine(s.polyline, DIFF_COLOR[leg.difficulty] || '#2563eb', true)
+          } else {
+            addLine(s.polyline, s.color || '#7c3aed', !!s.approx, 7)
+            // 정류장마다 마커 — 클릭하면 정류장 이름을 보여준다.
+            const stops = Array.isArray(s.stops) && s.stops.length
+              ? s.stops
+              : (Array.isArray(s.stationCoords) ? s.stationCoords.map(([lat, lng], k) => ({
+                  name: s.stations?.[k] || '', lat, lng,
+                })) : [])
+            stops.forEach((st) => {
+              if (typeof st.lat !== 'number' || typeof st.lng !== 'number') return
+              const mk = new T.Marker({
+                position: new T.LatLng(st.lat, st.lng),
+                icon: dotIcon(s.color || '#7c3aed', 5),
+                iconSize: new T.Size(10, 10),
+                map: mapRef.current,
+                title: st.name || '',
+              })
+              if (st.name) {
+                const kind = s.mode === 'subway' ? '역' : '정류장'
+                mk.addListener('click', () =>
+                  openInfo(T, mapRef.current, new T.LatLng(st.lat, st.lng),
+                    `<div class="pop"><div class="pop-title">${st.name}</div>` +
+                    `<div class="pop-type">${s.name} · ${kind}</div></div>`),
+                )
+              }
+              overlaysRef.current.route.push(mk)
+            })
+          }
+        })
       } else {
         addLine(leg.polyline, DIFF_COLOR[leg.difficulty] || '#2563eb',
                 leg.stairsPossible) // 점선 = 계단 가능성
       }
     })
+    // 렌더 루프가 그린 폴리라인 수는 순수 계산(좌표 ≥2점 구간 수)과 일치해야 한다 (Req 5.5)
+    if (import.meta.env.DEV) {
+      const expected = renderablePolylineCount(route)
+      const drawn = overlaysRef.current.route.filter((o) => o instanceof T.Polyline).length
+      if (drawn !== expected) {
+        console.warn(
+          `[MapView] 폴리라인 렌더 수 불일치: 그림=${drawn}, 예상=${expected}`,
+        )
+      }
+    }
     if (hasPoint) {
       const spanKm = Math.max((maxLat - minLat) * 111, (maxLng - minLng) * 88)
       const zoom = spanKm > 8 ? 12 : spanKm > 4 ? 13 : spanKm > 2 ? 14 : spanKm > 0.8 ? 15 : 16
