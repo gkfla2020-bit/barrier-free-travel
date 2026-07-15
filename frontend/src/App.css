@@ -573,3 +573,7 @@ body { font-family: 'Apple SD Gothic Neo', Pretendard, system-ui, sans-serif; co
 .wordmark .wm-a { color: #f59e0b; }
 .wordmark .wm-b { color: #e2574b; }
 .wordmark svg { display: block; }
+
+/* 원본 로고 이미지 워드마크 정렬 */
+.landing-wordmark { display: flex; justify-content: center; margin-bottom: 4px; }
+.topbar .wordmark-img { margin: 0; }

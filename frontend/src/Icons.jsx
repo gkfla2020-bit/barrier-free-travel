@@ -1,3 +1,5 @@
+import logoUrl from './assets/logo.png'
+
 // 이모지 대신 쓰는 미니 SVG 아이콘 세트 — 일관된 스트로크·컬러
 // 브랜드 팔레트: 편해질(앰버 #f5a04b) · 지도(코랄 #e2574b) · 접힌 지도 아이콘
 
@@ -12,16 +14,12 @@ export function MapFold({ size = 22 }) {
   )
 }
 
-// 워드마크 — "편해질(앰버) 지도(코랄)" + 접힌 지도. 원본은 손글씨 로고 이미지지만
-// 폰트 재현 대신 팔레트·구성을 따른다. (원본 PNG를 쓰려면 assets에 넣고 img로 교체)
+// 워드마크 — 원본 손글씨 로고 PNG (720×201, 투명 배경).
+// size는 기존 폰트 크기 의미를 유지 — 이미지 높이로 환산해 호출부 변경 없이 동작.
 export function Wordmark({ size = 18 }) {
   return (
-    <span className="wordmark" role="img" aria-label="편해질지도"
-          style={{ fontSize: size }}>
-      <b className="wm-a">편해질</b>
-      <b className="wm-b">지도</b>
-      <MapFold size={Math.round(size * 1.15)} />
-    </span>
+    <img className="wordmark-img" src={logoUrl} alt="편해질지도"
+         style={{ height: Math.round(size * 1.55), width: 'auto', display: 'block' }} />
   )
 }
 
