@@ -6,6 +6,7 @@ import { PersonaSurvey, CardDeck } from './PersonaDeck'
 import { Logo, BadgeIcon } from './Icons'
 import { fetchAllPlaces, fetchPlaceDetail, postChat, postRoute, postRestroomCoverage, postOnboard, resolvePlace, BADGE_LABELS } from './api'
 import { validDepartures, recognizeDeparture } from './departures'
+import TitlePage from './TitlePage'
 import './App.css'
 
 // 지역 레지스트리 — ready 지역은 실데이터(덤프) 서빙, 나머지는 답정너 안내 후 전환 유도.
@@ -209,8 +210,12 @@ export default function App() {
   const [region, setRegion] = useState(REGIONS[0]) // 현재 지역 (ready 지역만 진입)
   const [myLoc, setMyLoc] = useState(null) // 사용자가 허용한 실제 위치
   const [routeCourse, setRouteCourse] = useState([]) // 출발지 포함 경로용 코스
-  const [awaitRegion, setAwaitRegion] = useState(false) // 설문 직후: 채팅으로 지역 받기
+  const [awaitRegion, setAwaitRegion] = useState(false) // (폴백) 채팅으로 지역 받기
+  const [awaitOnboard, setAwaitOnboard] = useState(false) // 설문 직후: 출발지 한 번에 받기 (Haiku 매칭)
   const [awaitDeparture, setAwaitDeparture] = useState(false) // 지역 선택 후: 채팅으로 출발지 받기
+  // 사용자가 지역을 실제로 정한 적이 있나. false인데 검색어에서도 지역을 못 찾으면
+  // 조용히 기본값(서울)으로 떨어뜨리지 않고 되묻는다.
+  const [regionChosen, setRegionChosen] = useState(false)
   const [selectedDeparture, setSelectedDeparture] = useState(null) // 사용자가 고른 출발지 (Req 2.2)
   const [restrooms, setRestrooms] = useState([]) // 코스 장소별 화장실 커버리지 결과 (Req 7.1, 7.4, 7.5)
   const [avoidSlope, setAvoidSlope] = useState(false) // 경사 회피 옵션
@@ -344,6 +349,11 @@ export default function App() {
     if (coursePlaces.length < 1) return // 코스가 없으면 재계산하지 않음
 
     const eff = selectedDeparture
+    // 이미 같은 출발지로 경로가 구성돼 있으면 재계산하지 않는다
+    // (온보딩에서 출발지 설정과 경로 생성을 한 번에 처리한 경우의 중복 방지)
+    const cur = routeCourse[0]?.place
+    if (cur && cur.contentId === '__origin' && cur.lat === eff.lat && cur.lng === eff.lng) return
+
     const rc = [
       { place: { contentId: '__origin', title: eff.name, lat: eff.lat, lng: eff.lng, type: 0, badges: [] } },
       ...coursePlaces,
@@ -377,7 +387,71 @@ export default function App() {
   const handleSend = async (text) => {
     setMessages((m) => [...m, { role: 'user', content: text }])
 
-    // 온보딩 1단계: 지역명을 채팅으로 받는다. 인식되면 출발지 질문 단계로 넘어간다.
+    // 온보딩 0단계: 출발지를 한 번에 받는다 — 백엔드 Haiku가 오타·유사어까지 매칭해
+    // (예: "재주"→제주) 출발지 기반 프리셋 코스를 바로 만들어준다.
+    if (awaitOnboard) {
+      setLoading(true)
+      try {
+        const res = await postOnboard(text)
+        if (res.matched && res.departure) {
+          setAwaitOnboard(false)
+          const rgn = REGIONS.find((r) => r.id === res.departure.region && r.ready) || region
+          if (rgn.id !== region.id) switchRegion(rgn)
+          setRegionChosen(true)
+          const dep = { name: res.departure.name, lat: res.departure.lat, lng: res.departure.lng }
+          setSelectedDeparture(dep)
+          setMessages((m) => [...m, { role: 'assistant', content: res.reply }])
+
+          // 프리셋 코스가 오면 바로 지도에 렌더 + 경로까지
+          const preset = (res.course || []).sort((a, b) => a.order - b.order)
+          if (preset.length >= 2) {
+            const pool = Object.fromEntries((await fetchAllPlaces(rgn.bbox)).map((p) => [p.contentId, p]))
+            const resolved = preset.map((c) => ({ ...c, place: pool[c.contentId] })).filter((c) => c.place)
+            if (resolved.length >= 2) {
+              setCourse(resolved)
+              loadRestrooms(resolved)
+              const rc = [{ place: { contentId: '__origin', title: dep.name, lat: dep.lat, lng: dep.lng, type: 0, badges: [] } }, ...resolved]
+              setRouteCourse(rc)
+              const r = await loadRoute(rc)
+              setMessages((m) => [...m, { role: 'assistant', content: routeSummary(r, rc), course: resolved }])
+              return
+            }
+          }
+          // 프리셋이 부족하면 기존 카드덱 흐름으로
+          setMessages((m) => [...m, { role: 'assistant', content: '조건에 맞는 후보를 직접 골라볼게요!' }])
+          buildDeck(persona, rgn)
+          return
+        }
+        if (res.region) {
+          // 지역만 인식 → 그 지역 출발지를 물어본다
+          const rgn = REGIONS.find((r) => r.id === res.region && r.ready)
+          if (rgn) {
+            setAwaitOnboard(false)
+            setRegionChosen(true)
+            if (rgn.id !== region.id) switchRegion(rgn)
+            setAwaitDeparture(true)
+            const names = validDepartures(rgn).map((d) => d.name).join(', ')
+            setMessages((m) => [...m, { role: 'assistant', content:
+              `${rgn.name}(으)로 떠나볼게요! 어디서 출발하실래요? 예: ${names}` }])
+            return
+          }
+        }
+        setMessages((m) => [...m, { role: 'assistant', content:
+          res.reply || '출발지를 못 알아들었어요. 예) 광화문, 해운대역, 팔달문처럼 말씀해주세요.' }])
+        return
+      } catch {
+        // 온보딩 백엔드 실패 → 기존 지역 질문 흐름으로 폴백 (앱은 계속 동작)
+        setAwaitOnboard(false)
+        setAwaitRegion(true)
+        setMessages((m) => [...m, { role: 'assistant', content:
+          `일시적인 문제로 기본 방식으로 진행할게요. 어느 지역으로 가시나요? (${readyNames()})` }])
+        return
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    // 온보딩 1단계(폴백): 지역명을 채팅으로 받는다. 인식되면 출발지 질문 단계로 넘어간다.
     if (awaitRegion) {
       const r = detectRegion(text)
       if (r?.ready) {
@@ -546,14 +620,17 @@ export default function App() {
     }
   }
 
-  // 설문(스펙 1단계) 완료 → 채팅에서 지역 질문 (지역 선택 후 후보 필터로 진행)
+  // 설문(스펙 1단계) 완료 → 첫 질문은 '출발지' 하나로 통일.
+  // 출발지만 말하면 Haiku 매칭 → 지역 전환 + 프리셋 코스까지 한 번에 이어진다.
   const handleSurvey = (p) => {
     setSurvey(false)
     setPersona(p)
-    setAwaitRegion(true)
+    setAwaitOnboard(true)
     setMessages((m) => [...m, {
       role: 'assistant',
-      content: `${p.type} 조건 확인했어요. 어디로 떠나실까요? 지역 이름을 채팅으로 말씀해주세요.\n예: 서울, 경주, 부산, 전주, 강릉, 여수, 제주, 수원, 인천, 대구`,
+      content: `${p.type} 조건 확인했어요. 어디서 출발하세요?\n` +
+        `출발지 이름만 말씀하시면 코스까지 바로 준비해드릴게요.\n` +
+        `예) 광화문 · 해운대역 · 팔달문 · 제주버스터미널 (지역 이름만 말씀하셔도 돼요)`,
     }])
   }
 
@@ -646,6 +723,11 @@ export default function App() {
     } catch {
       setMessages((m) => [...m, { role: 'assistant', content: '⚠️ 경로 조회에 실패했어요. 잠시 후 다시 시도해주세요.' }])
     }
+  }
+
+  // 타이틀 페이지 — 시연 영상 오프닝. 시작하기를 누르면 설문(온보딩)으로 진입한다.
+  if (stage === 'title') {
+    return <TitlePage onStart={() => setStage('app')} />
   }
 
   return (
