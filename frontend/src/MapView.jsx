@@ -216,17 +216,31 @@ export default function MapView({ places, course, route, center, origin, restroo
             addLine(s.polyline, DIFF_COLOR[leg.difficulty] || '#2563eb', true)
           } else {
             addLine(s.polyline, s.color || '#7c3aed', !!s.approx, 7)
-            if (s.approx && Array.isArray(s.stationCoords)) {
-              s.stationCoords.forEach(([lat, lng]) => {
-                if (typeof lat !== 'number' || typeof lng !== 'number') return
-                overlaysRef.current.route.push(new T.Marker({
-                  position: new T.LatLng(lat, lng),
-                  icon: dotIcon(s.color || '#7c3aed', 5),
-                  iconSize: new T.Size(10, 10),
-                  map: mapRef.current,
-                }))
+            // 정류장마다 마커 — 클릭하면 정류장 이름을 보여준다.
+            const stops = Array.isArray(s.stops) && s.stops.length
+              ? s.stops
+              : (Array.isArray(s.stationCoords) ? s.stationCoords.map(([lat, lng], k) => ({
+                  name: s.stations?.[k] || '', lat, lng,
+                })) : [])
+            stops.forEach((st) => {
+              if (typeof st.lat !== 'number' || typeof st.lng !== 'number') return
+              const mk = new T.Marker({
+                position: new T.LatLng(st.lat, st.lng),
+                icon: dotIcon(s.color || '#7c3aed', 5),
+                iconSize: new T.Size(10, 10),
+                map: mapRef.current,
+                title: st.name || '',
               })
-            }
+              if (st.name) {
+                const kind = s.mode === 'subway' ? '역' : '정류장'
+                mk.addListener('click', () =>
+                  openInfo(T, mapRef.current, new T.LatLng(st.lat, st.lng),
+                    `<div class="pop"><div class="pop-title">${st.name}</div>` +
+                    `<div class="pop-type">${s.name} · ${kind}</div></div>`),
+                )
+              }
+              overlaysRef.current.route.push(mk)
+            })
           }
         })
       } else {

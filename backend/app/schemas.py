@@ -48,6 +48,7 @@ class TransitSegment(BaseModel):
     lowFloorNote: str = ""
     approx: bool = False  # True면 정류장 간 개략 직선(실제 도로 형상 아님)
     stationCoords: list[list[float]] = []  # 개략 직선일 때 정류장 마커 좌표 [[lat,lng],...]
+    stops: list[dict] = []  # 정류장 이름+좌표 [{name,lat,lng},...] (지도 마커 라벨용)
 
 
 class RouteLeg(BaseModel):

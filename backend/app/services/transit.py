@@ -237,6 +237,11 @@ def _leg(start: dict, end: dict) -> dict:
             pl = [[float(s["y"]), float(s["x"])]
                   for s in (sp.get("passStopList", {}).get("stations") or [])
                   if s.get("x") and s.get("y")]
+            # 정류장 이름 + 좌표를 함께 — 지도 마커에 정류장명을 표시하기 위함
+            stops = [{"name": s.get("stationName", ""),
+                      "lat": float(s["y"]), "lng": float(s["x"])}
+                     for s in (sp.get("passStopList", {}).get("stations") or [])
+                     if s.get("x") and s.get("y")]
             secs = int(sp.get("sectionTime", 0)) * 60
             # 실제 도로 형상 우선: loadLane section이 대응되면 그 형상으로 그린다.
             # 없으면 정류장 직선(pl) + approx=True + stationCoords + 안내로 폴백.
@@ -253,6 +258,7 @@ def _leg(start: dict, end: dict) -> dict:
                 "duration": secs, "stations": stations,
                 "color": _subway_color(name) if is_subway else BUS_COLOR,
                 "approx": approx, "stationCoords": station_coords,
+                "stops": stops,
             }
             if not is_subway:  # 저상버스 실시간 조회용 승차 정보 (응답 시점에 사용)
                 seg["_board"] = {"lat": sp["startY"], "lng": sp["startX"],

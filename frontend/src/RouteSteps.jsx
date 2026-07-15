@@ -72,6 +72,16 @@ function TransitSegment({ seg }) {
         {seg.approx && (
           <span className="seg-approx"> · ⚠️ 정류장 간 개략 직선 — 실제 도로와 다를 수 있음</span>
         )}
+        {stations.length > 0 && (
+          <details className="seg-stops">
+            <summary>정류장 {stations.length}개 보기</summary>
+            <ol>
+              {stations.map((st, k) => (
+                <li key={k}>{st}</li>
+              ))}
+            </ol>
+          </details>
+        )}
       </span>
     </li>
   )
