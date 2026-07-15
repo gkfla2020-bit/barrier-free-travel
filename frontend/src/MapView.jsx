@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { BADGE_LABELS } from './api'
+import { SLOPE_COLOR, slopeSegments } from './slope'
 
 const TYPE_COLOR = { 12: '#0d9488', 39: '#ea580c' } // 관광지 teal, 음식점 orange
 
@@ -41,7 +42,7 @@ function popupHtml(p) {
   </div>`
 }
 
-export default function MapView({ places, course, route, center, origin }) {
+export default function MapView({ places, course, route, center, origin, lineMode = 'difficulty' }) {
   const elRef = useRef(null)
   const mapRef = useRef(null)
   const [ready, setReady] = useState(false)
@@ -146,32 +147,51 @@ export default function MapView({ places, course, route, center, origin }) {
   }, [ready, origin?.lat, origin?.lng])
 
   // 경로 폴리라인 — Tmap 좌표를 Tmap 지도에 그리므로 도로에 정확히 붙는다
+  // lineMode: 'difficulty'=구간 난이도(worst-element) / 'slope'=지형 경사 등급.
+  //   경사는 난이도와 산정 로직이 달라(구간 단위 vs 90m 표본 단위) 한 선에 겹쳐 칠할 수 없다.
+  //   같은 색이 모드마다 다른 뜻이라 범례도 App.jsx에서 함께 바뀐다.
   // ⚠️ Tmapv2.fitBounds는 빈 LatLngBounds+extend 조합에서 (27,-180)으로 날아가는
   //    버그가 있어 직접 중심·줌을 계산한다.
   useEffect(() => {
     if (!ready) return
     const T = window.Tmapv2
     clear('route')
+    const DIFF_COLOR = { 어려움: '#dc2626', 중간: '#f59e0b' }
+    const draw = (path, color, dashed) =>
+      overlaysRef.current.route.push(new T.Polyline({
+        path: path.map(([lat, lng]) => new T.LatLng(lat, lng)),
+        strokeColor: color, strokeWeight: 6,
+        strokeStyle: dashed ? 'dash' : 'solid', // 점선 = 계단 가능성 (두 모드 공통)
+        strokeOpacity: 90, map: mapRef.current,
+      }))
+
     let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180, hasPoint = false
-    route?.legs?.forEach((leg) => {
-      const path = leg.polyline.map(([lat, lng]) => {
+    // 픽스처(데모) 경로는 요청한 코스와 무관한 광화문 좌표다. 지도에 그리면 코스 핀과
+    // 동떨어진 선이 그려져 진짜 경로인 척 하게 된다 — 아예 안 그린다 (RouteSteps가 이유를 알림).
+    const legs = route?.fallback ? [] : (route?.legs ?? [])
+    legs.forEach((leg) => {
+      // 경사 회피로 바뀐 구간은 '원래 가려던 길'을 회색 점선으로 깔아 우회를 눈에 보이게 한다
+      if (leg.detour && leg.baseline?.polyline?.length) {
+        overlaysRef.current.route.push(new T.Polyline({
+          path: leg.baseline.polyline.map(([lat, lng]) => new T.LatLng(lat, lng)),
+          strokeColor: '#94a3b8', strokeWeight: 4, strokeStyle: 'dot',
+          strokeOpacity: 70, map: mapRef.current,
+        }))
+      }
+      leg.polyline.forEach(([lat, lng]) => {
         if (lat < minLat) minLat = lat
         if (lat > maxLat) maxLat = lat
         if (lng < minLng) minLng = lng
         if (lng > maxLng) maxLng = lng
         hasPoint = true
-        return new T.LatLng(lat, lng)
       })
-      const DIFF_COLOR = { 어려움: '#dc2626', 중간: '#f59e0b' }
-      const line = new T.Polyline({
-        path,
-        strokeColor: DIFF_COLOR[leg.difficulty] || '#2563eb',
-        strokeWeight: 6,
-        strokeStyle: leg.stairsPossible ? 'dash' : 'solid', // 점선 = 계단 가능성
-        strokeOpacity: 90,
-        map: mapRef.current,
-      })
-      overlaysRef.current.route.push(line)
+      if (lineMode === 'slope') {
+        // 한 구간 안에서도 경사가 바뀌므로 폴리라인을 등급별로 잘라 칠한다
+        slopeSegments(leg).forEach((sg) =>
+          draw(sg.path, SLOPE_COLOR[sg.cls], leg.stairsPossible))
+      } else {
+        draw(leg.polyline, DIFF_COLOR[leg.difficulty] || '#2563eb', leg.stairsPossible)
+      }
     })
     if (hasPoint) {
       const spanKm = Math.max((maxLat - minLat) * 111, (maxLng - minLng) * 88)
@@ -179,7 +199,7 @@ export default function MapView({ places, course, route, center, origin }) {
       mapRef.current.setCenter(new T.LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2))
       mapRef.current.setZoom(zoom)
     }
-  }, [ready, route])
+  }, [ready, route, lineMode])
 
   return <div id="map" ref={elRef} role="application" aria-label="무장애 여행 지도" />
 }

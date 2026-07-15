@@ -22,11 +22,17 @@ export const postChat = (message, region = 'seoul') =>
     body: JSON.stringify({ message, region }),
   }).then(json)
 
-export const postRoute = (waypoints) =>
+// 검색어가 어느 지역·장소를 가리키는지만 확인 (메모리 연산, LLM 호출 0).
+// 하드코딩 키워드에 없는 장소명("남산", "동백섬")도 백엔드가 전 지역 데이터로 찾아준다.
+export const resolvePlace = (q, region = 'seoul') =>
+  fetch(`/api/resolve?q=${encodeURIComponent(q)}&region=${region}`).then(json)
+
+// avoidSlope: 켜면 더 돌더라도 경사가 완만한 경로를 찾는다 (탐색이 붙어 응답이 느려짐)
+export const postRoute = (waypoints, avoidSlope = false) =>
   fetch('/api/route', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ waypoints }),
+    body: JSON.stringify({ waypoints, avoidSlope }),
   }).then(json)
 
 export const BADGE_LABELS = {
