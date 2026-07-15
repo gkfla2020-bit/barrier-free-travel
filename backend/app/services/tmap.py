@@ -62,6 +62,9 @@ def _difficulty(distance: int, c: dict) -> tuple[str, list[str]]:
 CROSSWALKS = set(range(211, 218))          # 횡단보도 계열 turnType
 BRIDGE_TURNS = {125: "육교", 126: "지하보도"}
 BRIDGE_FACILITY = {"12", "14", "18"}       # LineString facilityType: 육교/지하보도/지하철지하보도
+# 계단은 turnType(127/129)이 아니라 LineString facilityType 17로 온다 — 실측 확인:
+# 명동→남산 옵션0 경로의 fac 17이 옵션30에서 완전히 사라짐 (17=계단 확정)
+STAIRS_FACILITY = "17"
 
 
 def _parse(data: dict, stairs_forced: bool) -> dict:
@@ -77,8 +80,12 @@ def _parse(data: dict, stairs_forced: bool) -> dict:
         if geom["type"] == "LineString":
             # Tmap은 [경도, 위도] 순서 → [lat, lng]로 뒤집는다
             polyline.extend([[c[1], c[0]] for c in geom["coordinates"]])
-            if str(props.get("facilityType", "")) in BRIDGE_FACILITY:
+            fac = str(props.get("facilityType", ""))
+            if fac in BRIDGE_FACILITY:
                 facility_bridge += 1
+            elif fac == STAIRS_FACILITY:
+                stairs = True
+                counts["stairs"] += 1
         elif geom["type"] == "Point":
             turn = props.get("turnType")
             desc = (props.get("description") or "").strip()
@@ -105,6 +112,8 @@ def _parse(data: dict, stairs_forced: bool) -> dict:
 
     # 안내점에 안 잡히고 구간 시설물로만 잡히는 육교/지하보도 보완 (중복 방지 위해 max)
     counts["bridge"] = max(counts["bridge"], facility_bridge)
+    if counts["stairs"] and stairs_forced:  # 계단회피 실패 폴백 경로에만 등장 가능
+        guides.insert(0, f"⚠️ 이 구간은 계단 {counts['stairs']}곳을 지납니다 (우회 경로를 찾지 못함)")
 
     level, reasons = _difficulty(distance, counts)
     if counts["elevator"]:
