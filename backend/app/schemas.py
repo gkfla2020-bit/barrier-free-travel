@@ -44,6 +44,8 @@ class TransitSegment(BaseModel):
     duration: int = 0  # 초
     stations: list[str] = []
     color: str = ""  # 지하철 노선색 / 버스 녹색 (지도 렌더용)
+    lowFloor: bool | None = None  # 다음 버스 저상 여부 (None = 실시간 정보 없음)
+    lowFloorNote: str = ""
 
 
 class RouteLeg(BaseModel):

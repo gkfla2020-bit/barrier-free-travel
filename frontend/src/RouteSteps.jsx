@@ -49,7 +49,7 @@ export default function RouteSteps({ route, course }) {
             </summary>
             <ul>
               {leg.guides.map((g, j) => (
-                <li key={j} className={g.startsWith('⚠️') ? 'warn' : /^\[(지하철|버스)\]/.test(g) ? 'transit' : ''}>
+                <li key={j} className={g.startsWith('⚠️') ? 'warn' : /^\[(지하철|버스|저상)\]/.test(g) ? 'transit' : ''}>
                   <span className="icon">{stepIcon(g)}</span>{g}
                 </li>
               ))}

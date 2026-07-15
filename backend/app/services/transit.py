@@ -12,7 +12,7 @@ import os
 
 import httpx
 
-from . import tmap
+from . import tago, tmap
 
 URL = "https://api.odsay.com/v1/api/searchPubTransPathT"
 WALK_ONLY_M = 700  # 직선거리 이하 구간은 대중교통 없이 도보 유지 (탑승이 오히려 손해)
@@ -142,12 +142,17 @@ def _leg(start: dict, end: dict) -> dict:
                   for s in (sp.get("passStopList", {}).get("stations") or [])
                   if s.get("x") and s.get("y")]
             secs = int(sp.get("sectionTime", 0)) * 60
-            segs.append({
+            seg = {
                 "mode": "subway" if is_subway else "bus", "name": name,
                 "polyline": pl, "distance": int(sp.get("distance", 0)),
                 "duration": secs, "stations": stations,
                 "color": _subway_color(name) if is_subway else BUS_COLOR,
-            })
+            }
+            if not is_subway:  # 저상버스 실시간 조회용 승차 정보 (응답 시점에 사용)
+                seg["_board"] = {"lat": sp["startY"], "lng": sp["startX"],
+                                 "name": sp.get("startName", ""),
+                                 "busNo": lane.get("busNo", "")}
+            segs.append(seg)
             polyline.extend(pl)
             dur_s += secs
             kind = "지하철" if is_subway else "버스"
@@ -182,13 +187,40 @@ def _leg(start: dict, end: dict) -> dict:
     return leg
 
 
+def _enrich_low_floor(leg: dict) -> None:
+    """버스 구간마다 다음 버스 저상 여부를 실시간 조회해 안내에 붙인다.
+    실시간 정보라 leg 캐시에 넣지 않고 매 응답마다 갱신한다."""
+    for seg in leg["segments"]:
+        board = seg.get("_board")
+        if seg.get("mode") != "bus" or not board:
+            continue
+        low, note = tago.next_bus(board["lat"], board["lng"],
+                                  board["busNo"], board["name"])
+        seg["lowFloor"] = low
+        seg["lowFloorNote"] = note
+        if not note:
+            continue
+        prefix = "[저상] " if low else "⚠️ "
+        head = f"[버스] {seg['name']}"  # 해당 버스 안내문 바로 뒤에 삽입
+        idx = next((i for i, g in enumerate(leg["guides"]) if g.startswith(head)), None)
+        leg["guides"].insert(idx + 1 if idx is not None else len(leg["guides"]),
+                             prefix + note)
+        if not low and "저상 아님" not in " ".join(leg["reasons"]):
+            leg["reasons"].append(f"{seg['name']} 다음 차량 저상 아님")
+
+
 def route(waypoints: list[dict]) -> dict:
     legs = []
     for a, b in zip(waypoints, waypoints[1:]):
         if _straight_m(a, b) <= WALK_ONLY_M:
-            legs.append({**tmap._leg(a, b), "mode": "walk", "segments": []})
+            base = {**tmap._leg(a, b), "mode": "walk", "segments": []}
         else:
-            legs.append(_leg(a, b))
+            base = _leg(a, b)
+        # 캐시 원본을 오염시키지 않도록 복사 후 실시간 정보를 얹는다
+        leg = {**base, "guides": list(base["guides"]), "reasons": list(base["reasons"]),
+               "segments": [dict(s) for s in base.get("segments", [])]}
+        _enrich_low_floor(leg)
+        legs.append(leg)
 
     total_walk = sum(l["distance"] for l in legs)
     worst = max((l["difficulty"] for l in legs), key=_RANK.get, default="쉬움")
