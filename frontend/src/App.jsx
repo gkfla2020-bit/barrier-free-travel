@@ -12,13 +12,21 @@ import './App.css'
 const REGIONS = [
   { id: 'seoul', name: '서울 · 경복궁 일대', ready: true,
     center: { lat: 37.5788, lng: 126.977 }, bbox: [37.4, 37.7, 126.8, 127.2],
+    origin: { name: '광화문역', lat: 37.5717, lng: 126.9769 },
     keywords: ['서울', '경복궁', '광화문', '종로', '북촌', '덕수궁', '인사동'] },
   { id: 'gyeongju', name: '경주 · 대릉원', ready: true,
     center: { lat: 35.837, lng: 129.216 }, bbox: [35.65, 36.05, 129.0, 129.45],
+    origin: { name: '경주시외버스터미널', lat: 35.8419, lng: 129.2089 },
     keywords: ['경주', '대릉원', '첨성대', '불국사', '황리단길', '동궁'] },
-  { id: 'busan', name: '부산 · 해운대', keywords: ['부산', '해운대', '광안리'],
+  { id: 'busan', name: '부산 · 해운대', ready: true,
+    center: { lat: 35.1587, lng: 129.1604 }, bbox: [35.05, 35.28, 129.05, 129.30],
+    origin: { name: '해운대역', lat: 35.1637, lng: 129.1586 },
+    keywords: ['부산', '해운대', '광안리'],
     canned: '부산은 해운대 무장애 해변 산책로와 영화의전당 일대가 휠체어 접근성이 좋기로 알려져 있어요.' },
-  { id: 'jeonju', name: '전주 · 한옥마을', keywords: ['전주', '한옥마을'],
+  { id: 'jeonju', name: '전주 · 한옥마을', ready: true,
+    center: { lat: 35.8143, lng: 127.1524 }, bbox: [35.70, 35.92, 127.05, 127.28],
+    origin: { name: '한옥마을 공영주차장', lat: 35.8172, lng: 127.1479 },
+    keywords: ['전주', '한옥마을'],
     canned: '전주 한옥마을은 경기전 앞 큰길과 태조로 구간이 비교적 평탄해 이동약자 여행 수요가 많은 곳이에요.' },
   { id: 'gangneung', name: '강릉 · 경포', keywords: ['강릉', '경포', '안목'],
     canned: '강릉은 경포호 순환 산책로가 평탄하고 안목해변 카페거리도 접근성이 좋은 편이에요.' },
@@ -36,6 +44,7 @@ const REGIONS = [
 
 const detectRegion = (text) =>
   REGIONS.find((r) => r.keywords?.some((k) => text.includes(k)))
+const readyNames = () => REGIONS.filter((r) => r.ready).map((r) => r.name.split(' ·')[0]).join('·')
 const distKm = (a, b) => Math.hypot((a.lat - b.lat) * 111, (a.lng - b.lng) * 88)
 
 // 담은 장소들을 가까운 순서로 자동 정렬 (최근접 이웃)
@@ -78,7 +87,7 @@ const GREETING = {
   role: 'assistant',
   content:
     '안녕하세요! 이동약자를 위한 무장애 여행 플래너 "모두의 여행"입니다.\n' +
-    '어디로, 어떤 조건으로 여행하고 싶으신가요? (지금 바로 가능: 서울 경복궁 일대 · 경주 대릉원 일대)\n' +
+    '어디로, 어떤 조건으로 여행하고 싶으신가요? (지원 지역: 서울 · 경주 · 부산 · 전주)\n' +
     '예: "휠체어로 반나절 코스", "유모차 가족 코스"처럼 말씀해주세요.',
 }
 
@@ -93,6 +102,34 @@ export default function App() {
   const [persona, setPersona] = useState(null) // {type, badges[], tastes[]}
   const [mapFilter, setMapFilter] = useState(null) // 지도 시설 필터 (badge 키)
   const [region, setRegion] = useState(REGIONS[0]) // 현재 지역 (ready 지역만 진입)
+  const [myLoc, setMyLoc] = useState(null) // 사용자가 허용한 실제 위치
+  const [routeCourse, setRouteCourse] = useState([]) // 출발지 포함 경로용 코스
+
+  // 출발지: 내 위치가 지역 안이면 내 위치, 아니면 지역 거점(역·터미널)
+  const getOrigin = (r) => {
+    if (myLoc && myLoc.lat >= r.bbox[0] && myLoc.lat <= r.bbox[1] &&
+        myLoc.lng >= r.bbox[2] && myLoc.lng <= r.bbox[3]) return myLoc
+    return r.origin
+  }
+
+  const locateMe = () => {
+    if (!navigator.geolocation) return
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const loc = { name: '내 위치', lat: pos.coords.latitude, lng: pos.coords.longitude }
+        setMyLoc(loc)
+        const inside = loc.lat >= region.bbox[0] && loc.lat <= region.bbox[1] &&
+                       loc.lng >= region.bbox[2] && loc.lng <= region.bbox[3]
+        setMessages((m) => [...m, {
+          role: 'assistant',
+          content: inside
+            ? '출발지를 내 위치로 설정했어요. 이제 코스가 현재 위치에서 시작합니다.'
+            : `현재 위치가 ${region.name.split(' ·')[0]} 밖이라, 이 지역에서는 ${region.origin.name} 출발 기준으로 안내해요. (내 위치가 포함된 지역에서는 자동으로 내 위치 출발)`,
+        }])
+      },
+      () => setMessages((m) => [...m, { role: 'assistant', content: '위치 권한을 확인할 수 없어 지역 거점 출발로 안내해요.' }]),
+    )
+  }
 
   const placeById = useMemo(
     () => Object.fromEntries(places.map((p) => [p.contentId, p])),
@@ -110,6 +147,7 @@ export default function App() {
     setRegion(r)
     setCourse([])
     setRoute(null)
+    setRouteCourse([])
   }
 
   const handleSend = async (text) => {
@@ -120,7 +158,7 @@ export default function App() {
     if (detected && !detected.ready) {
       setMessages((m) => [...m, {
         role: 'assistant',
-        content: `${detected.canned}\n상세 접근성 데이터와 코스 기능은 준비 중이에요. 지금은 서울·경주에서 전체 기능을 쓸 수 있어요!`,
+        content: `${detected.canned}\n지도 기반 맞춤 코스는 지금 ${readyNames()} 지역에서 바로 만들어드릴 수 있어요. 어디부터 가볼까요?`,
         regions: REGIONS.filter((r) => r.ready),
       }])
       return
@@ -150,11 +188,12 @@ export default function App() {
       setMessages((m) => [...m, { role: 'assistant', content: res.reply, course: resolved.length ? resolved : undefined }])
 
       if (resolved.length >= 2) {
-        const r = await postRoute(
-          resolved.map((c) => ({ lat: c.place.lat, lng: c.place.lng, name: c.place.title })),
-        )
+        const eff = getOrigin(active)
+        const rc = [{ place: { contentId: '__origin', title: eff.name, lat: eff.lat, lng: eff.lng, type: 0, badges: [] } }, ...resolved]
+        const r = await postRoute(rc.map((c) => ({ lat: c.place.lat, lng: c.place.lng, name: c.place.title })))
+        setRouteCourse(rc)
         setRoute(r)
-        setMessages((m) => [...m, { role: 'assistant', content: routeSummary(r, resolved) }])
+        setMessages((m) => [...m, { role: 'assistant', content: routeSummary(r, rc) }])
       }
     } catch {
       setMessages((m) => [...m, { role: 'assistant', content: '⚠️ 요청 처리 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.' }])
@@ -170,14 +209,14 @@ export default function App() {
     setMessages((m) => [...m, {
       role: 'assistant',
       content: `${p.type} 조건 확인했어요. 어느 지역으로 떠나시나요?`,
-      regions: REGIONS,
+      regions: REGIONS.filter((r) => r.ready),
     }])
   }
 
   const handleRegion = (r) => {
     setMessages((m) => [...m, { role: 'user', content: r.name }])
     if (!r.ready) {
-      setMessages((m) => [...m, { role: 'assistant', content: `${r.canned || ''}\n상세 데이터는 준비 중이에요. 지금은 서울·경주에서 체험할 수 있어요!` }])
+      setMessages((m) => [...m, { role: 'assistant', content: `${r.canned || ''}\n지도 코스는 ${readyNames()} 지역에서 바로 만들 수 있어요.` }])
       return
     }
     if (r.id !== region.id) switchRegion(r)
@@ -236,7 +275,8 @@ export default function App() {
       setMessages((m) => [...m, { role: 'assistant', content: '코스를 만들려면 2곳 이상 담아주세요. 설문부터 다시 시작할 수 있어요.' }])
       return
     }
-    const ordered = optimizeOrder(picked, region.center)
+    const eff = getOrigin(region)
+    const ordered = optimizeOrder(picked, eff)
     const resolved = ordered.map((c, i) => ({
       contentId: c.place.contentId, order: i + 1,
       reason: c.place.badges.map((b) => BADGE_LABELS[b]).join(' · ') || '무장애 인증 장소',
@@ -249,9 +289,11 @@ export default function App() {
       course: resolved,
     }])
     try {
-      const r = await postRoute(resolved.map((c) => ({ lat: c.place.lat, lng: c.place.lng, name: c.place.title })))
+      const rc = [{ place: { contentId: '__origin', title: eff.name, lat: eff.lat, lng: eff.lng, type: 0, badges: [] } }, ...resolved]
+      const r = await postRoute(rc.map((c) => ({ lat: c.place.lat, lng: c.place.lng, name: c.place.title })))
+      setRouteCourse(rc)
       setRoute(r)
-      setMessages((m) => [...m, { role: 'assistant', content: routeSummary(r, resolved) }])
+      setMessages((m) => [...m, { role: 'assistant', content: routeSummary(r, rc) }])
     } catch {
       setMessages((m) => [...m, { role: 'assistant', content: '⚠️ 경로 조회에 실패했어요. 잠시 후 다시 시도해주세요.' }])
     }
@@ -282,7 +324,7 @@ export default function App() {
               설문으로 맞춤 코스 시작하기 <span>이동 조건 → 후보 카드 → 자동 코스</span>
             </button>
             <ChatPanel messages={messages} loading={loading} onSend={handleSend} course={course} onRegion={handleRegion} />
-            <RouteSteps route={route} course={course} />
+            <RouteSteps route={route} course={routeCourse.length ? routeCourse : course} />
           </>
         )}
       </aside>
@@ -295,10 +337,12 @@ export default function App() {
               <BadgeIcon badge={b} /> {BADGE_LABELS[b]}
             </button>
           ))}
+          <button className={myLoc ? 'on' : ''} onClick={locateMe}>내 위치 출발</button>
         </div>
         <MapView
           places={mapFilter ? places.filter((p) => p.badges.includes(mapFilter)) : places}
-          course={course} route={route} center={region.center} />
+          course={course} route={route} center={region.center}
+          origin={route ? getOrigin(region) : null} />
       </main>
     </div>
   )

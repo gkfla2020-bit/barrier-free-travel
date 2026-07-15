@@ -41,11 +41,11 @@ function popupHtml(p) {
   </div>`
 }
 
-export default function MapView({ places, course, route, center }) {
+export default function MapView({ places, course, route, center, origin }) {
   const elRef = useRef(null)
   const mapRef = useRef(null)
   const [ready, setReady] = useState(false)
-  const overlaysRef = useRef({ places: [], course: [], route: [] })
+  const overlaysRef = useRef({ places: [], course: [], route: [], origin: [] })
   const infoRef = useRef(null)
 
   const clear = (group) => {
@@ -127,6 +127,23 @@ export default function MapView({ places, course, route, center }) {
       overlaysRef.current.course.push(m)
     })
   }, [ready, course])
+
+  // 출발지 마커 (역·터미널 또는 내 위치)
+  useEffect(() => {
+    if (!ready) return
+    const T = window.Tmapv2
+    clear('origin')
+    if (!origin) return
+    const m = new T.Marker({
+      position: new T.LatLng(origin.lat, origin.lng),
+      icon: pinIcon('출', '#334155'),
+      iconSize: new T.Size(34, 34),
+      map: mapRef.current,
+      zIndex: 1100,
+      title: origin.name,
+    })
+    overlaysRef.current.origin.push(m)
+  }, [ready, origin?.lat, origin?.lng])
 
   // 경로 폴리라인 — Tmap 좌표를 Tmap 지도에 그리므로 도로에 정확히 붙는다
   // ⚠️ Tmapv2.fitBounds는 빈 LatLngBounds+extend 조합에서 (27,-180)으로 날아가는
