@@ -23,37 +23,43 @@ _arrival_cache: dict[tuple, tuple[float, list]] = {}
 
 
 def _rows(path: str, **params) -> list | None:
-    """TAGO 공통 호출 — 실패는 None (items 없음은 빈 리스트)."""
+    """TAGO 공통 호출 — 실패는 None (items 없음은 빈 리스트).
+    공공 API 특성상 간헐 지연·오류가 잦아 1회 재시도한다."""
     key = os.environ.get("TAGO_API_KEY", "")
     if not key:
         return None
-    try:
-        r = httpx.get(f"{BASE}/{path}",
-                      params={"serviceKey": key, "_type": "json",
-                              "numOfRows": 50, **params},
-                      timeout=4.0)
-        body = r.json()["response"]["body"]
-        items = body.get("items") or {}
-        rows = items.get("item") if isinstance(items, dict) else None
-        if rows is None:
-            return []
-        return rows if isinstance(rows, list) else [rows]
-    except Exception:
-        return None
+    for attempt in range(2):
+        try:
+            r = httpx.get(f"{BASE}/{path}",
+                          params={"serviceKey": key, "_type": "json",
+                                  "numOfRows": 50, **params},
+                          timeout=8.0)
+            body = r.json()["response"]["body"]
+            items = body.get("items") or {}
+            rows = items.get("item") if isinstance(items, dict) else None
+            if rows is None:
+                return []
+            return rows if isinstance(rows, list) else [rows]
+        except Exception:
+            if attempt == 0:
+                time.sleep(0.4)
+    return None
 
 
 def _norm(s) -> str:
     return re.sub(r"[^0-9A-Za-z가-힣]", "", str(s)).upper()
 
 
-def _find_stop(lat: float, lng: float, name: str = "") -> tuple | None:
-    """좌표 근접 정류소 → (cityCode, nodeId). 이름이 비슷하면 가산점."""
+def _find_stops(lat: float, lng: float, name: str = "") -> list[tuple]:
+    """좌표 근접 정류소 후보 목록 → [(cityCode, nodeId), ...] 최대 4개.
+    같은 이름 정류소가 방향·승강장별로 여러 개라(예: 해운대도시철도역 3개)
+    하나만 고르면 도착정보가 비어있을 수 있다 — 후보를 모두 반환해 순회한다."""
     ck = (round(lat, 4), round(lng, 4))  # ~11m 격자
     if ck in _stop_cache:
         return _stop_cache[ck]
     rows = _rows("BusSttnInfoInqireService/getCrdntPrxmtSttnList",
                  gpsLati=lat, gpsLong=lng, numOfRows=10)
-    result = None
+    result: list[tuple] = []
     if rows:
         target = _norm(name)
 
@@ -63,36 +69,37 @@ def _find_stop(lat: float, lng: float, name: str = "") -> tuple | None:
             similar = target and nm and (nm in target or target in nm)
             return (0 if similar else 1, d)  # 이름 유사 우선, 그다음 거리
 
-        best = min(rows, key=score)
-        if best.get("citycode") and best.get("nodeid"):
-            result = (best["citycode"], best["nodeid"])
+        result = [(r["citycode"], r["nodeid"])
+                  for r in sorted(rows, key=score)
+                  if r.get("citycode") and r.get("nodeid")][:4]
     _stop_cache[ck] = result
     return result
 
 
-def next_bus(lat: float, lng: float, bus_no: str, stop_name: str = "") -> tuple[bool | None, str]:
-    """승차 정류장의 해당 노선 다음 버스 → (저상 여부, 안내문). 정보 없으면 (None, '')."""
-    stop = _find_stop(lat, lng, stop_name)
-    if not stop:
-        return None, ""
-    city, node = stop
-
+def _arrivals(city, node) -> list:
     ck, now = (city, node), time.time()
     cached = _arrival_cache.get(ck)
     if cached and now - cached[0] < ARRIVAL_TTL:
-        rows = cached[1]
-    else:
-        rows = _rows("ArvlInfoInqireService/getSttnAcctoArvlPrearngeInfoList",
-                     cityCode=city, nodeId=node)
-        if rows is None:
-            return None, ""
-        _arrival_cache[ck] = (now, rows)
+        return cached[1]
+    rows = _rows("ArvlInfoInqireService/getSttnAcctoArvlPrearngeInfoList",
+                 cityCode=city, nodeId=node) or []
+    _arrival_cache[ck] = (now, rows)
+    return rows
 
+
+def next_bus(lat: float, lng: float, bus_no: str, stop_name: str = "") -> tuple[bool | None, str]:
+    """승차 정류장의 해당 노선 다음 버스 → (저상 여부, 안내문). 정보 없으면 (None, '').
+    후보 정류소를 순회하며 해당 노선이 잡히는 곳을 찾는다."""
     tno = _norm(bus_no)
     if not tno:
         return None, ""
-    matches = [r for r in rows if _norm(r.get("routeno", "")) == tno] \
-        or [r for r in rows if tno in _norm(r.get("routeno", ""))]
+    matches: list = []
+    for city, node in _find_stops(lat, lng, stop_name):
+        rows = _arrivals(city, node)
+        matches = [r for r in rows if _norm(r.get("routeno", "")) == tno] \
+            or [r for r in rows if tno in _norm(r.get("routeno", ""))]
+        if matches:
+            break
     if not matches:
         return None, ""
 

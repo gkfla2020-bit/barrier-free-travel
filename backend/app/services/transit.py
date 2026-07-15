@@ -231,7 +231,13 @@ def route(waypoints: list[dict]) -> dict:
     reasons = [f"총 도보 {total_walk}m", f"대중교통 {n_transit}개 구간 이용"]
     if any(l.get("_transit", {}).get("subway") for l in legs):
         reasons.append(NOTE_SUBWAY)
-    if any(l.get("_transit", {}).get("bus") for l in legs):
+    # 실시간 조회로 저상 여부를 알아낸 구간은 구체적으로, 못 알아낸 구간만 일반 안내
+    bus_segs = [s for l in legs for s in l["segments"] if s.get("mode") == "bus"]
+    if any(s.get("lowFloor") is False for s in bus_segs):
+        reasons.append("일부 구간 다음 버스가 저상 아님 — 구간 안내 확인")
+    elif any(s.get("lowFloor") for s in bus_segs):
+        reasons.append("다음 버스 저상 확인됨")
+    if any(s.get("lowFloor") is None for s in bus_segs):
         reasons.append(NOTE_BUS)
 
     for l in legs:  # 내부 필드는 응답에서 제거
