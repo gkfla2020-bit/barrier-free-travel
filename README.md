@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/logo.svg" width="88" alt="편해질지도 로고"/>
+<img src="frontend/src/assets/logo.png" width="400" alt="편해질지도 로고"/>
 
 # 편해질지도
 
