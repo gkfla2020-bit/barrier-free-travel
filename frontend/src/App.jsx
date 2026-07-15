@@ -3,10 +3,10 @@ import MapView from './MapView'
 import ChatPanel from './ChatPanel'
 import RouteSteps from './RouteSteps'
 import { PersonaSurvey, CardDeck } from './PersonaDeck'
+import Landing from './Landing'
 import { Logo, BadgeIcon } from './Icons'
 import { fetchAllPlaces, fetchPlaceDetail, postChat, postRoute, postRestroomCoverage, postOnboard, resolvePlace, BADGE_LABELS } from './api'
 import { validDepartures, recognizeDeparture } from './departures'
-import TitlePage from './TitlePage'
 import './App.css'
 
 // 지역 레지스트리 — ready 지역은 실데이터(덤프) 서빙, 나머지는 답정너 안내 후 전환 유도.
@@ -202,7 +202,7 @@ export default function App() {
   const [course, setCourse] = useState([])
   const [route, setRoute] = useState(null)
   const [loading, setLoading] = useState(false)
-  const [survey, setSurvey] = useState(true) // 첫 화면 = 페르소나 설문 (스펙 1단계)
+  const [survey, setSurvey] = useState(true) // 랜딩(stage) 통과 후 첫 화면 = 설문
   const [travelMode, setTravelMode] = useState('walk') // walk | transit
   const [deck, setDeck] = useState(null) // [{place, detail}] — 카드 스와이프 후보
   const [persona, setPersona] = useState(null) // {type, badges[], tastes[]}
@@ -727,7 +727,8 @@ export default function App() {
       foods = near(list.filter((pl) => pl.type === 39))
       setMessages((m) => [...m, { role: 'assistant', content: '⚠️ 모든 조건을 만족하는 곳이 부족해 일부 조건을 완화한 후보를 보여드려요. 카드의 배지를 꼭 확인해주세요.' }])
     }
-    let selT = tours.slice(0, 5), selF = foods.slice(0, 2)
+    const cafes = near(list.filter((pl) => pl.category === 'cafe' && match(pl)))
+    let selT = tours.slice(0, 5), selF = foods.slice(0, 3), selC = cafes.slice(0, 3)
     if (p.pace !== 'full' && tours.length) {
       // 가장 밀집한 클러스터의 앵커 선정 — 700m 안에 조건 만족 장소가 가장 많은
       // 관광지. (중심 최근접 앵커는 주변이 헐거우면 반경이 넓어져 코스가 길어짐)
@@ -740,16 +741,23 @@ export default function App() {
       for (const km of [0.7, 1.0, 1.4]) {
         const byAnchor = (a, b) => distKm(a, anchor) - distKm(b, anchor)
         selT = tours.filter((pl) => distKm(pl, anchor) <= km).sort(byAnchor).slice(0, 5)
-        selF = foods.filter((pl) => distKm(pl, anchor) <= km).sort(byAnchor).slice(0, 2)
+        selF = foods.filter((pl) => distKm(pl, anchor) <= km).sort(byAnchor).slice(0, 3)
+        selC = cafes.filter((pl) => distKm(pl, anchor) <= km).sort(byAnchor).slice(0, 3)
         if (selT.length >= 3 && selF.length >= 1) break
       }
     }
-    const cand = [...selT, ...selF]
+    const cand = [...selT, ...selF, ...selC]
     const details = await Promise.all(cand.map((pl) => fetchPlaceDetail(pl.contentId).catch(() => null)))
-    setDeck(cand.map((pl, i) => ({ place: pl, detail: details[i] })))
+    const byId = Object.fromEntries(cand.map((pl, i) => [pl.contentId, { place: pl, detail: details[i] }]))
+    const groups = [
+      { label: '여행지', items: selT.map((pl) => byId[pl.contentId]) },
+      { label: '식당', items: selF.map((pl) => byId[pl.contentId]) },
+      { label: '카페', items: selC.map((pl) => byId[pl.contentId]) },
+    ].filter((g) => g.items.length)
+    setDeck(groups)
     setMessages((m) => [...m, {
       role: 'assistant',
-      content: `${p.type} 기준, 조건(${required.map((b) => BADGE_LABELS[b] || b).join(', ') || '무장애 인증'})을 만족하는 후보 ${cand.length}곳을 골랐어요.${p.pace !== 'full' ? ' 짧은 동선이 되도록 서로 가까운 곳만 모았어요.' : ''} 카드를 넘기며 마음에 드는 곳을 담아보세요!`,
+      content: `${p.type} 기준, 조건(${required.map((b) => BADGE_LABELS[b] || b).join(', ') || '무장애 인증'})을 만족하는 후보를 여행지 ${selT.length} · 식당 ${selF.length} · 카페 ${selC.length}곳으로 나눠 준비했어요.${p.pace !== 'full' ? ' 짧은 동선이 되도록 서로 가까운 곳만 모았어요.' : ''} 카테고리별로 마음에 드는 곳을 담아보세요!`,
     }])
   }
 
@@ -784,9 +792,10 @@ export default function App() {
     }
   }
 
-  // 타이틀 페이지 — 시연 영상 오프닝. 시작하기를 누르면 설문(온보딩)으로 진입한다.
+  // 랜딩(타이틀) — 시연 영상 오프닝. 시작하기를 누르면 설문(온보딩)으로 진입한다.
+  // 팀에서 만든 Landing 컴포넌트를 채택 (기존 TitlePage는 제거).
   if (stage === 'title') {
-    return <TitlePage onStart={() => setStage('app')} />
+    return <Landing onStart={() => setStage('app')} />
   }
 
   // 모바일 레이아웃 단계: 온보딩(설문·출발지/지역 입력·카드덱) 동안은 지도가 필요 없다 —
@@ -859,7 +868,7 @@ export default function App() {
           </div>
         )}
         {survey && <PersonaSurvey onSubmit={handleSurvey} onClose={() => setSurvey(false)} />}
-        {deck && <CardDeck cards={deck} onDone={handleDeckDone} onClose={() => setDeck(null)} />}
+        {deck && <CardDeck groups={deck} onDone={handleDeckDone} onClose={() => setDeck(null)} />}
         {!survey && !deck && (
           <>
             <button className="persona-cta" onClick={() => setSurvey(true)}>

@@ -83,18 +83,21 @@ export function PersonaSurvey({ onSubmit, onClose }) {
   )
 }
 
-export function CardDeck({ cards, onDone, onClose }) {
-  const [idx, setIdx] = useState(0)
+export function CardDeck({ groups, onDone, onClose }) {
+  // groups: [{label:'여행지', items:[{place,detail}]}, {label:'식당'...}, {label:'카페'...}]
+  const [gi, setGi] = useState(0)
+  const [ci, setCi] = useState(0)
   const [picked, setPicked] = useState([])
 
-  const card = cards[idx]
+  const group = groups[gi]
+  const card = group?.items[ci]
   // 상태 전환은 클릭 즉시 처리 (타이머에 넣으면 탭 스로틀링·연타에서 클릭 유실).
-  // 애니메이션은 다음 카드의 등장 효과(key 리마운트)로 처리 — 로직과 완전 분리.
   const advance = (take) => {
     const next = take ? [...picked, card] : picked
     if (take) setPicked(next)
-    if (idx + 1 >= cards.length) onDone(next)
-    else setIdx(idx + 1)
+    if (ci + 1 < group.items.length) setCi(ci + 1)
+    else if (gi + 1 < groups.length) { setGi(gi + 1); setCi(0) }
+    else onDone(next)
   }
 
   if (!card) return null
@@ -103,18 +106,25 @@ export function CardDeck({ cards, onDone, onClose }) {
   return (
     <section className="deck">
       <div className="p-head">
-        <strong>후보 살펴보기 ({idx + 1}/{cards.length} · 담음 {picked.length})</strong>
+        <strong>{group.label} 고르기 ({ci + 1}/{group.items.length}) · 담음 {picked.length}</strong>
         <button className="p-close" onClick={() => onDone(picked)} aria-label="선택 종료">완료</button>
         <button className="p-close" onClick={onClose} aria-label="닫기">✕</button>
       </div>
-      <div className="card enter" key={idx}>
+      <div className="deck-steps">
+        {groups.map((g, i) => (
+          <span key={g.label} className={i === gi ? 'on' : i < gi ? 'done' : ''}>
+            {g.label} {i < gi && '✓'}
+          </span>
+        ))}
+      </div>
+      <div className="card enter" key={`${gi}-${ci}`}>
         {card.detail?.image
           ? <img src={card.detail.image} alt="" className="card-img" />
           : <div className="card-img none">{card.place.title.slice(0, 1)}</div>}
         <div className="card-body">
           <div className="card-title">
             {card.place.title}
-            <span className="ctype">{card.place.type === 39 ? '음식점' : '관광지'}</span>
+            <span className="ctype">{{ tour: '관광지', food: '음식점', cafe: '카페' }[card.place.category] || '관광지'}</span>
           </div>
           <div className="card-badges">
             {card.place.badges.map((b) => (

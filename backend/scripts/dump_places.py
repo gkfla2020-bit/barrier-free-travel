@@ -92,10 +92,15 @@ def build_place(item: dict, offline: bool) -> dict | None:
         return None  # 좌표 없는 장소는 지도에 못 찍으므로 제외
 
     common, withtour = raw["common"], raw["withtour"]
+    ctype = int(item["contenttypeid"])
+    cat3 = common.get("cat3", "") or item.get("cat3", "")
+    # A05020900 = 카페/전통찻집 (TourAPI 서비스분류코드)
+    category = "tour" if ctype == 12 else ("cafe" if cat3 == "A05020900" else "food")
     return {
         "contentId": cid,
         "title": item.get("title", ""),
-        "type": int(item["contenttypeid"]),
+        "type": ctype,
+        "category": category,
         "lat": lat, "lng": lng,
         "addr": common.get("addr1", "") or item.get("addr1", ""),
         "image": common.get("firstimage", "") or item.get("firstimage", ""),
