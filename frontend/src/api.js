@@ -22,11 +22,25 @@ export const postChat = (message, region = 'seoul') =>
     body: JSON.stringify({ message, region }),
   }).then(json)
 
-export const postRoute = (waypoints, mode = 'walk') =>
+// 검색어가 어느 지역·장소를 가리키는지만 확인 (메모리 연산, LLM 호출 0).
+// 하드코딩 키워드에 없는 장소명("남산", "동백섬")도 백엔드가 전 지역 데이터로 찾아준다.
+export const resolvePlace = (q, region = 'seoul') =>
+  fetch(`/api/resolve?q=${encodeURIComponent(q)}&region=${region}`).then(json)
+
+// 자유 텍스트 → 출발지/코스 매칭 (Claude Haiku — 오타·유사어 허용, 예: "재주"→제주)
+export const postOnboard = (text) =>
+  fetch('/api/onboard', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  }).then(json)
+
+// mode: walk | transit · avoidSlope: 켜면 더 돌더라도 경사가 완만한 경로 (응답 느려짐)
+export const postRoute = (waypoints, mode = 'walk', avoidSlope = false) =>
   fetch('/api/route', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ waypoints, mode }),
+    body: JSON.stringify({ waypoints, mode, avoidSlope }),
   }).then(json)
 
 // 코스 장소별 500m 이내 최근접 접근 화장실 커버리지 (Req 7.1, 7.4, 7.5)
