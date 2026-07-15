@@ -377,7 +377,17 @@ def route(waypoints: list[dict], avoid_slope: bool = False) -> dict:
         worst = "어려움"
 
     n_transit = sum(1 for l in legs if l.get("mode") == "transit")
-    reasons = [f"총 도보 {total_walk}m", f"대중교통 {n_transit}개 구간 이용"]
+
+    # 코스 전체 경사 — 도보 leg의 표고 프로파일을 tmap.route와 동일 로직으로 집계.
+    # 대중교통 leg는 slope=None이라 covered=False로 내려가는 게 정직한 동작이다.
+    slope = tmap.course_slope(legs)
+    reasons = []
+    if slope:
+        if slope["steepDist"]:
+            reasons.append(f"급경사(1/12 초과) {slope['steepDist']}m")
+        if slope["ascent"] >= 10:
+            reasons.append(f"누적 오르막 {slope['ascent']}m")
+    reasons += [f"총 도보 {total_walk}m", f"대중교통 {n_transit}개 구간 이용"]
     if any(l.get("_transit", {}).get("subway") for l in legs):
         reasons.append(NOTE_SUBWAY)
     # 실시간 조회로 저상 여부를 알아낸 구간은 구체적으로, 못 알아낸 구간만 일반 안내
@@ -400,4 +410,6 @@ def route(waypoints: list[dict], avoid_slope: bool = False) -> dict:
     return {"legs": legs, "totalDistance": total_walk,
             "totalDuration": total_duration,
             "difficulty": worst, "reasons": reasons,
-            "avoidSlope": avoid_slope}
+            "avoidSlope": avoid_slope, "slope": slope,
+            # 회피 전/후 비교 — 도보 leg에 실제 우회(detour)가 있을 때만 값이 생긴다
+            "baseline": tmap.course_baseline(legs) if avoid_slope else None}

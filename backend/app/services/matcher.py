@@ -45,6 +45,7 @@ _STRIP_TOKENS = sorted(
 
 
 def _normalize(text: str) -> str:
+    """사용자 텍스트 정규화 — 공백 제거 + 조사/의도어 strip + 소문자화."""
     if not isinstance(text, str):
         return ""
     s = "".join(text.split())  # 모든 공백 제거
@@ -53,34 +54,58 @@ def _normalize(text: str) -> str:
     return s.strip().lower()
 
 
+def _normalize_candidate(text: str) -> str:
+    """후보(출발지/지역 name·keywords) 정규화 — 공백 제거 + 소문자화만.
+
+    조사/의도어 strip은 사용자 텍스트(_normalize) 전용이다. 후보에까지 적용하면
+    '종로'→'종', '중앙로'→'중앙'처럼 과축약 키가 생겨 오매칭을 유발한다.
+    """
+    if not isinstance(text, str):
+        return ""
+    return "".join(text.split()).strip().lower()
+
+
 def fast_match(text: str) -> tuple[dict | None, str | None]:
     """LLM 없이 name/keywords 부분 문자열 매칭. 반환: (departure|None, region_id|None).
 
     가장 긴 키가 이기게 해서 "경주시외버스터미널"이 제주 키워드 "버스터미널"에
-    잘못 잡히지 않게 한다. 출발지 매칭이 지역 매칭보다 우선.
+    잘못 잡히지 않게 한다. 정규화된 후보 키가 2글자 미만이면 매칭에서 제외.
+    사용자 텍스트는 조사 strip 버전과 원본(공백 제거만) 버전 둘 다에 대해
+    비교한다 — strip이 "종로3가역"→"종3가역"처럼 이름 자체를 훼손해도
+    원본 키에서 잡히도록. 출발지 매칭이 기본 우선이지만, 지역 매칭도 함께
+    스캔해 교차 검증한다: 지역이 잡혔는데 출발지 매칭의 region과 다르면
+    (예: "인천공항" → 제주 출발지) 출발지 매칭을 폐기하고 (None, 지역)을 반환한다.
     """
     data = load_departures()
-    key = _normalize(text)
-    if not key:
+    keys = {k for k in (_normalize(text), _normalize_candidate(text)) if k}
+    if not keys:
         return None, None
 
     # 1) 출발지: name + keywords 중 텍스트에 포함된 가장 긴 것
     best_dep, best_len = None, 0
     for dep in data["departures"]:
         for cand in [dep["name"], *dep.get("keywords", [])]:
-            ck = _normalize(cand)
-            if ck and ck in key and len(ck) > best_len:
+            ck = _normalize_candidate(cand)
+            if len(ck) < 2:  # 1글자 키는 오매칭 위험 — 제외
+                continue
+            if len(ck) > best_len and any(ck in k for k in keys):
                 best_dep, best_len = dep, len(ck)
-    if best_dep:
-        return best_dep, best_dep["region"]
 
     # 2) 지역: name + keywords (서울/경주/부산/전주/강릉/여수/제주/수원/인천/대구)
-    best_region, best_len = None, 0
+    best_region, best_region_len = None, 0
     for r in data["regions"]:
         for cand in [r["name"], *r.get("keywords", [])]:
-            ck = _normalize(cand)
-            if ck and ck in key and len(ck) > best_len:
-                best_region, best_len = r["id"], len(ck)
+            ck = _normalize_candidate(cand)
+            if len(ck) < 2:  # 1글자 키는 오매칭 위험 — 제외
+                continue
+            if len(ck) > best_region_len and any(ck in k for k in keys):
+                best_region, best_region_len = r["id"], len(ck)
+
+    # 3) 교차 검증: 지역이 매칭됐는데 출발지 매칭의 region과 다르면 출발지 폐기
+    if best_dep and best_region and best_dep["region"] != best_region:
+        return None, best_region
+    if best_dep:
+        return best_dep, best_dep["region"]
     return None, best_region
 
 

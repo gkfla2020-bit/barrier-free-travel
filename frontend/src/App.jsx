@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import MapView from './MapView'
 import ChatPanel from './ChatPanel'
 import RouteSteps from './RouteSteps'
@@ -222,13 +222,21 @@ export default function App() {
   const [slopeBusy, setSlopeBusy] = useState(false) // 우회 재탐색 중
   const [lineMode, setLineMode] = useState('difficulty') // 지도 경로선 색 기준: 난이도 | 경사
   const [stage, setStage] = useState('title') // title | app — 타이틀 페이지에서 시작하기로 진입
+  // 온보딩 핸들러가 출발지 설정+경로 생성을 직접 처리하는 동안 selectedDeparture 이펙트를
+  // 건너뛰기 위한 플래그 (상태는 같은 배치에서 커밋돼 구분 불가 — ref여야 함)
+  const onboardRouting = useRef(false)
+  // 경로 요청 토큰 — 늦게 도착한 이전 요청의 응답이 최신 경로를 덮어쓰지 않게 한다
+  const routeReq = useRef(0)
 
   // 출발지 우선순위 (Req 2.2): 선택 출발지 > 내 위치(지역 안) > 유효 departures[0] > r.origin
   // 유효성 검증(validDepartures)을 통과한 출발지만 사용한다 (Req 1.6).
+  // 선택 출발지도 해당 지역 bbox 안일 때만 인정 — 지역 전환 직후 stale 클로저로
+  // 이전 지역 출발지(예: 서울 광화문)가 부산 코스의 출발점이 되는 사고를 막는다.
+  const inBbox = (p, r) => p && p.lat >= r.bbox[0] && p.lat <= r.bbox[1] &&
+    p.lng >= r.bbox[2] && p.lng <= r.bbox[3]
   const getOrigin = (r) => {
-    if (selectedDeparture) return selectedDeparture
-    if (myLoc && myLoc.lat >= r.bbox[0] && myLoc.lat <= r.bbox[1] &&
-        myLoc.lng >= r.bbox[2] && myLoc.lng <= r.bbox[3]) return myLoc
+    if (inBbox(selectedDeparture, r)) return selectedDeparture
+    if (inBbox(myLoc, r)) return myLoc
     const valid = validDepartures(r)
     return valid[0] || r.origin
   }
@@ -277,11 +285,13 @@ export default function App() {
   )
 
   const loadRoute = async (resolved, mode = travelMode, avoid = avoidSlope) => {
+    const token = ++routeReq.current
     const r = await postRoute(
       resolved.map((c) => ({ lat: c.place.lat, lng: c.place.lng, name: c.place.title })),
       mode, avoid,
     )
-    setRoute(r)
+    // 더 최신 요청이 이미 나갔다면 이 응답은 버린다 (늦은 응답이 최신 경로를 덮어쓰는 레이스 방지)
+    if (token === routeReq.current) setRoute(r)
     return r
   }
 
@@ -344,6 +354,8 @@ export default function App() {
   // selectedDeparture에만 의존하므로 내부에서 상태를 바꿔도 무한 루프가 생기지 않는다.
   useEffect(() => {
     if (!selectedDeparture) return
+    // 온보딩 핸들러가 이 출발지로 경로 생성까지 직접 처리 중이면 건너뛴다 (이중 계산 방지)
+    if (onboardRouting.current) { onboardRouting.current = false; return }
     // 출발지를 제외한 코스 장소 목록 확보 (routeCourse[0]은 __origin)
     const coursePlaces = routeCourse.length >= 2 ? routeCourse.slice(1) : course
     if (coursePlaces.length < 1) return // 코스가 없으면 재계산하지 않음
@@ -377,6 +389,7 @@ export default function App() {
   // 지역 전환: 코스·경로·선택 출발지 초기화 + 지도는 MapView가 center prop으로 이동 (Req 2.7)
   const switchRegion = (r) => {
     setRegion(r)
+    setRegionChosen(true) // ready 지역으로의 전환은 곧 사용자가 지역을 정한 것
     setCourse([])
     setRoute(null)
     setRouteCourse([])
@@ -391,35 +404,54 @@ export default function App() {
     // (예: "재주"→제주) 출발지 기반 프리셋 코스를 바로 만들어준다.
     if (awaitOnboard) {
       setLoading(true)
+      // catch 범위는 온보딩 매칭(postOnboard) 실패만 — 매칭 성공 후의 장소/경로 조회
+      // 실패는 '온보딩 실패'가 아니므로 확정된 지역·출발지 상태를 되돌리지 않는다.
+      let res
       try {
-        const res = await postOnboard(text)
+        res = await postOnboard(text)
+      } catch {
+        // 온보딩 백엔드 실패 → 기존 지역 질문 흐름으로 폴백 (앱은 계속 동작)
+        setLoading(false)
+        setAwaitOnboard(false)
+        setAwaitRegion(true)
+        setMessages((m) => [...m, { role: 'assistant', content:
+          `일시적인 문제로 기본 방식으로 진행할게요. 어느 지역으로 가시나요? (${readyNames()})` }])
+        return
+      }
+      try {
         if (res.matched && res.departure) {
           setAwaitOnboard(false)
           const rgn = REGIONS.find((r) => r.id === res.departure.region && r.ready) || region
           if (rgn.id !== region.id) switchRegion(rgn)
           setRegionChosen(true)
           const dep = { name: res.departure.name, lat: res.departure.lat, lng: res.departure.lng }
+          onboardRouting.current = true // 아래에서 경로 생성까지 직접 하므로 이펙트 중복 계산 방지
           setSelectedDeparture(dep)
           setMessages((m) => [...m, { role: 'assistant', content: res.reply }])
 
-          // 프리셋 코스가 오면 바로 지도에 렌더 + 경로까지
-          const preset = (res.course || []).sort((a, b) => a.order - b.order)
-          if (preset.length >= 2) {
-            const pool = Object.fromEntries((await fetchAllPlaces(rgn.bbox)).map((p) => [p.contentId, p]))
-            const resolved = preset.map((c) => ({ ...c, place: pool[c.contentId] })).filter((c) => c.place)
-            if (resolved.length >= 2) {
-              setCourse(resolved)
-              loadRestrooms(resolved)
-              const rc = [{ place: { contentId: '__origin', title: dep.name, lat: dep.lat, lng: dep.lng, type: 0, badges: [] } }, ...resolved]
-              setRouteCourse(rc)
-              const r = await loadRoute(rc)
-              setMessages((m) => [...m, { role: 'assistant', content: routeSummary(r, rc), course: resolved }])
-              return
+          // 프리셋 코스가 오면 바로 지도에 렌더 + 경로까지 — 실패해도 온보딩 상태는 유지
+          try {
+            const preset = (res.course || []).sort((a, b) => a.order - b.order)
+            if (preset.length >= 2) {
+              const pool = Object.fromEntries((await fetchAllPlaces(rgn.bbox)).map((p) => [p.contentId, p]))
+              const resolved = preset.map((c) => ({ ...c, place: pool[c.contentId] })).filter((c) => c.place)
+              if (resolved.length >= 2) {
+                setCourse(resolved)
+                loadRestrooms(resolved)
+                const rc = [{ place: { contentId: '__origin', title: dep.name, lat: dep.lat, lng: dep.lng, type: 0, badges: [] } }, ...resolved]
+                setRouteCourse(rc)
+                const r = await loadRoute(rc)
+                setMessages((m) => [...m, { role: 'assistant', content: routeSummary(r, rc), course: resolved }])
+                return
+              }
             }
+            // 프리셋이 부족하면 기존 카드덱 흐름으로
+            setMessages((m) => [...m, { role: 'assistant', content: '조건에 맞는 후보를 직접 골라볼게요!' }])
+            buildDeck(persona, rgn)
+          } catch {
+            setMessages((m) => [...m, { role: 'assistant', content:
+              '⚠️ 경로를 계산하지 못했어요. 잠시 후 다시 시도하거나 원하는 장소를 말씀해주세요.' }])
           }
-          // 프리셋이 부족하면 기존 카드덱 흐름으로
-          setMessages((m) => [...m, { role: 'assistant', content: '조건에 맞는 후보를 직접 골라볼게요!' }])
-          buildDeck(persona, rgn)
           return
         }
         if (res.region) {
@@ -438,13 +470,6 @@ export default function App() {
         }
         setMessages((m) => [...m, { role: 'assistant', content:
           res.reply || '출발지를 못 알아들었어요. 예) 광화문, 해운대역, 팔달문처럼 말씀해주세요.' }])
-        return
-      } catch {
-        // 온보딩 백엔드 실패 → 기존 지역 질문 흐름으로 폴백 (앱은 계속 동작)
-        setAwaitOnboard(false)
-        setAwaitRegion(true)
-        setMessages((m) => [...m, { role: 'assistant', content:
-          `일시적인 문제로 기본 방식으로 진행할게요. 어느 지역으로 가시나요? (${readyNames()})` }])
         return
       } finally {
         setLoading(false)
@@ -486,6 +511,7 @@ export default function App() {
       const rec = recognizeDeparture(text, region)
       if (rec.status === 'single') {
         setAwaitDeparture(false)
+        setRegionChosen(true) // 같은 지역에서 출발지만 정한 경우에도 지역 확정으로 취급
         setSelectedDeparture(rec.matches[0])
         setMessages((m) => [...m, { role: 'assistant', content:
           `출발지를 '${rec.matches[0].name}'(으)로 정했어요! 조건에 맞는 후보를 고르고 있어요…` }])
@@ -504,6 +530,7 @@ export default function App() {
       // 건너뛰기 지원
       if (/건너|스킵|skip|아무|모르/i.test(text)) {
         setAwaitDeparture(false)
+        setRegionChosen(true)
         setMessages((m) => [...m, { role: 'assistant', content: `${region.origin.name} 출발 기준으로 진행할게요!` }])
         buildDeck(persona, region)
       }
@@ -641,6 +668,7 @@ export default function App() {
       return
     }
     if (r.id !== region.id) switchRegion(r)
+    setRegionChosen(true) // 같은 지역 칩을 다시 눌러도 '지역 확정'으로 취급
     // 지역 선택 후 출발지를 채팅으로 묻는다 (온보딩 흐름 통일)
     setAwaitRegion(false)
     setAwaitDeparture(true)

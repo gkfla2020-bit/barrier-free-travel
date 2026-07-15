@@ -230,7 +230,11 @@ export default function MapView({ places, course, route, center, origin, restroo
         // 정류장 좌표에 작은 마커를 찍어 "정류장 to 정류장"임을 명확히 한다.
         leg.segments.forEach((s) => {
           if (s.mode === 'walk') {
-            addLine(s.polyline, DIFF_COLOR[leg.difficulty] || '#2563eb', true)
+            // 경사 모드에서 대중교통 leg의 도보 구간은 표고 미집계 → '모름' 회색으로.
+            // 난이도색으로 칠하면 경사 범례와 같은 색이 다른 뜻이 되어 오해를 만든다.
+            addLine(s.polyline,
+              lineMode === 'slope' ? SLOPE_COLOR.unknown : (DIFF_COLOR[leg.difficulty] || '#2563eb'),
+              true)
           } else {
             addLine(s.polyline, s.color || '#7c3aed', !!s.approx, 7)
             // 정류장마다 마커 — 클릭하면 정류장 이름을 보여준다.

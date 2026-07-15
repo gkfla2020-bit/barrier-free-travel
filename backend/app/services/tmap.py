@@ -307,14 +307,69 @@ def _less_slope(start: dict, end: dict, base: dict) -> dict:
 def _leg(start: dict, end: dict, avoid_slope: bool = False) -> dict:
     key = (round(start["lat"], 5), round(start["lng"], 5),
            round(end["lat"], 5), round(end["lng"], 5))
-    if (key, avoid_slope) in _cache:
-        return _cache[(key, avoid_slope)]
+    hit = _cache.get((key, avoid_slope))
+    if hit is not None:
+        # 성공 leg인데 표고만 없는 경우(Open-Meteo 일시 실패)는 히트 시점에 재채점을
+        # 시도한다 — _score가 profile을 다시 조회해 성공하면 slope/난이도/사유를
+        # 갱신한다. Tmap은 재호출하지 않는다(쿼터 보호). 실패하면 다음 히트 때 재시도.
+        if not hit["fallback"] and hit.get("slope") is None:
+            _score(hit)
+        return hit
 
-    base = _cache.get((key, False)) or _score(_fetch_leg(start, end))
-    _cache[(key, False)] = base
+    base = _cache.get((key, False))
+    if base is not None and not base["fallback"] and base.get("slope") is None:
+        _score(base)  # 위와 동일한 표고 재채점 — 우회 판단(_less_slope)에도 필요하다
+    if base is None:
+        base = _score(_fetch_leg(start, end))
+    # Tmap 순간 장애(타임아웃·429·네트워크)로 생긴 직선 폴백(fallback=True)은
+    # 어떤 슬롯에도 캐시하지 않는다 — 캐시에 남으면 이후 재시도가 오염된 결과만
+    # 계속 히트해 서버 재시작 전까지 복구가 불가능해진다.
+    if not base["fallback"]:
+        _cache[(key, False)] = base
     leg = _less_slope(start, end, base) if avoid_slope else base
-    _cache[(key, avoid_slope)] = leg
+    if not leg["fallback"]:
+        _cache[(key, avoid_slope)] = leg
     return leg
+
+
+def course_slope(legs: list[dict]) -> dict | None:
+    """코스 전체 경사 집계 — 최대 기울기는 최댓값, 나머지는 합산 (worst-element와 같은 결).
+
+    tmap.route와 transit.route가 공유한다. leg["slope"]가 없는 구간(표고 실패,
+    대중교통 leg)은 집계에서 빠지고 covered=False로 정직하게 표기한다."""
+    profs = [l["slope"] for l in legs if l.get("slope")]
+    if not profs:
+        return None
+    return {"maxGrade": max(p["maxGrade"] for p in profs),
+            "ascent": sum(p["ascent"] for p in profs),
+            "descent": sum(p["descent"] for p in profs),
+            "steepDist": sum(p["steepDist"] for p in profs),
+            "moderateDist": sum(p["moderateDist"] for p in profs),
+            "covered": len(profs) == len(legs)}  # 일부 구간만 쟀는지 정직하게 표기
+
+
+def course_baseline(legs: list[dict]) -> dict | None:
+    """회피 전/후 비교용 코스 baseline — 실제 우회(detour) leg가 하나라도 있을 때만.
+
+    우회가 거리를 늘려 오히려 손해인 경우도 그대로 보여준다.
+    "돌아간 만큼 좋아졌다"고 단정하지 않는 게 이 비교의 유일한 존재 이유다.
+    우회 안 한 구간은 자기 값이 곧 회피 전 값 — 빼먹으면 회피 전을 과소평가해
+    "덕분에 급경사가 이만큼 줄었다"고 부풀리게 된다."""
+    if not any(l.get("detour") for l in legs):
+        return None
+    b_dist = sum(l.get("baseline", l)["distance"] for l in legs)
+    b_worst = max((l.get("baseline", l)["difficulty"] for l in legs),
+                  key=_RANK.get, default="쉬움")
+    b_grades = [l["baseline"]["maxGrade"] if l.get("baseline")
+                else (l.get("slope") or {}).get("maxGrade", 0) for l in legs]
+    if b_dist > COURSE_HARD_TOTAL:
+        b_worst = "어려움"
+    return {"totalDistance": b_dist, "difficulty": b_worst,
+            "maxGrade": max(b_grades, default=0.0),
+            "steepDist": sum(l["baseline"]["steepDist"] if l.get("baseline")
+                             else (l.get("slope") or {}).get("steepDist", 0)
+                             for l in legs),
+            "detourLegs": sum(1 for l in legs if l.get("detour"))}
 
 
 def route(waypoints: list[dict], avoid_slope: bool = False) -> dict:
@@ -357,15 +412,8 @@ def route(waypoints: list[dict], avoid_slope: bool = False) -> dict:
         reasons.append(f"육교·지하보도 {agg['bridge']}회")
 
     # 코스 전체 경사 — 최대 기울기는 최댓값, 나머지는 합산 (worst-element와 같은 결)
-    profs = [l["slope"] for l in legs if l.get("slope")]
-    slope = None
-    if profs:
-        slope = {"maxGrade": max(p["maxGrade"] for p in profs),
-                 "ascent": sum(p["ascent"] for p in profs),
-                 "descent": sum(p["descent"] for p in profs),
-                 "steepDist": sum(p["steepDist"] for p in profs),
-                 "moderateDist": sum(p["moderateDist"] for p in profs),
-                 "covered": len(profs) == len(legs)}  # 일부 구간만 쟀는지 정직하게 표기
+    slope = course_slope(legs)
+    if slope:
         if slope["steepDist"]:
             reasons.append(f"급경사(1/12 초과) {slope['steepDist']}m")
         if slope["ascent"] >= 10:
@@ -379,25 +427,8 @@ def route(waypoints: list[dict], avoid_slope: bool = False) -> dict:
     if agg["crosswalk"]:
         reasons.append(f"횡단보도 {agg['crosswalk']}회")
 
-    # 회피 전/후 비교 — 우회가 거리를 늘려 오히려 손해인 경우도 그대로 보여준다.
-    # "돌아간 만큼 좋아졌다"고 단정하지 않는 게 이 화면의 유일한 존재 이유다.
-    baseline = None
-    if avoid_slope and any(l.get("detour") for l in legs):
-        b_dist = sum(l.get("baseline", l)["distance"] for l in legs)
-        b_worst = max((l.get("baseline", l)["difficulty"] for l in legs),
-                      key=_RANK.get, default="쉬움")
-        b_grades = [l["baseline"]["maxGrade"] if l.get("baseline")
-                    else (l["slope"] or {}).get("maxGrade", 0) for l in legs]
-        if b_dist > COURSE_HARD_TOTAL:
-            b_worst = "어려움"
-        # 우회 안 한 구간은 자기 값이 곧 회피 전 값 — 빼먹으면 회피 전을 과소평가해
-        # "덕분에 급경사가 이만큼 줄었다"고 부풀리게 된다.
-        baseline = {"totalDistance": b_dist, "difficulty": b_worst,
-                    "maxGrade": max(b_grades, default=0.0),
-                    "steepDist": sum(l["baseline"]["steepDist"] if l.get("baseline")
-                                     else (l["slope"] or {}).get("steepDist", 0)
-                                     for l in legs),
-                    "detourLegs": sum(1 for l in legs if l.get("detour"))}
+    # 회피 전/후 비교 — course_baseline 주석 참조 (손해여도 그대로 보여준다)
+    baseline = course_baseline(legs) if avoid_slope else None
 
     return {"legs": legs,
             "totalDistance": total,
