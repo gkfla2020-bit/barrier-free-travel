@@ -42,12 +42,16 @@ class RouteLeg(BaseModel):
     guides: list[str]
     stairsPossible: bool = False
     fallback: bool = False
+    difficulty: str = "쉬움"  # 쉬움 | 중간 | 어려움 (worst-element 방식)
+    reasons: list[str] = []
 
 
 class RouteOut(BaseModel):
     legs: list[RouteLeg]
     totalDistance: int
     totalDuration: int
+    difficulty: str = "쉬움"
+    reasons: list[str] = []
 
 
 class ChatRequest(BaseModel):

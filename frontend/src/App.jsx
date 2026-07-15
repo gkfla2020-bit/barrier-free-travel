@@ -5,6 +5,26 @@ import RouteSteps from './RouteSteps'
 import { fetchAllPlaces, postChat, postRoute } from './api'
 import './App.css'
 
+// 경로 설명은 LLM이 아니라 Tmap 실데이터에서 생성 — 계단 수·거리·시간이 100% 사실
+function routeSummary(r, course) {
+  const emoji = { 쉬움: '🟢', 중간: '🟡', 어려움: '🔴' }
+  const fmt = (m) => (m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${m}m`)
+  const min = (s) => `${Math.max(1, Math.round(s / 60))}분`
+  const legs = r.legs.map((l, i) => {
+    const why = l.reasons?.length ? ` — ${l.reasons.join(', ')}` : ''
+    return `${i + 1}. ${course[i].place.title} → ${course[i + 1].place.title}: ` +
+      `${fmt(l.distance)}·${min(l.duration)} ${emoji[l.difficulty]}${l.difficulty}${why}`
+  })
+  const head =
+    `🧭 이동 경로를 확인했어요. 총 도보 ${fmt(r.totalDistance)} · ${min(r.totalDuration)}\n` +
+    `이동 난이도: ${emoji[r.difficulty]} ${r.difficulty}` +
+    (r.reasons?.length ? ` (${r.reasons.join(' · ')})` : '')
+  const stairs = r.legs.some((l) => l.stairsPossible)
+    ? '\n⚠️ 일부 구간에 계단이 있을 수 있어요. 왼쪽 경로 안내에서 우회 지점을 확인하세요.'
+    : '\n✅ 전 구간 계단 회피 경로입니다.'
+  return `${head}\n${legs.join('\n')}${stairs}`
+}
+
 const GREETING = {
   role: 'assistant',
   content:
@@ -49,6 +69,7 @@ export default function App() {
           resolved.map((c) => ({ lat: c.place.lat, lng: c.place.lng, name: c.place.title })),
         )
         setRoute(r)
+        setMessages((m) => [...m, { role: 'assistant', content: routeSummary(r, resolved) }])
       }
     } catch {
       setMessages((m) => [...m, { role: 'assistant', content: '⚠️ 요청 처리 중 오류가 발생했어요. 잠시 후 다시 시도해주세요.' }])

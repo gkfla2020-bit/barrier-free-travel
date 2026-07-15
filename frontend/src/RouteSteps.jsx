@@ -10,6 +10,17 @@ function stepIcon(text) {
   return '🚶'
 }
 
+const DIFF_CLASS = { 쉬움: 'easy', 중간: 'mid', 어려움: 'hard' }
+
+export function DiffChip({ level, reasons }) {
+  return (
+    <span className={`diff ${DIFF_CLASS[level] || 'easy'}`}
+          title={reasons?.join(' · ') || ''}>
+      {level}
+    </span>
+  )
+}
+
 export default function RouteSteps({ route, course }) {
   if (!route) return null
   const anyStairs = route.legs.some((l) => l.stairsPossible)
@@ -17,8 +28,14 @@ export default function RouteSteps({ route, course }) {
   return (
     <section className="steps">
       <div className={`steps-total ${anyStairs ? 'warn' : 'ok'}`}>
-        <strong>도보 {fmt(route.totalDistance)} · {fmtT(route.totalDuration)}</strong>
-        <span>{anyStairs ? '⚠️ 계단 가능 구간 포함 — 아래 안내 확인' : '✅ 계단 회피 경로'}</span>
+        <strong>
+          도보 {fmt(route.totalDistance)} · {fmtT(route.totalDuration)}
+          {' '}<DiffChip level={route.difficulty} reasons={route.reasons} />
+        </strong>
+        <span>
+          {anyStairs ? '⚠️ 계단 가능 구간 포함 — 아래 안내 확인' : '✅ 계단 회피 경로'}
+          {route.reasons?.length ? ` · ${route.reasons.join(' · ')}` : ''}
+        </span>
       </div>
 
       {route.legs.map((leg, i) => {
@@ -29,7 +46,9 @@ export default function RouteSteps({ route, course }) {
             <summary>
               <span className={`leg-line${leg.stairsPossible ? ' warn' : ''}`} />
               {from} → {to}
-              <span className="leg-meta">{fmt(leg.distance)} · {fmtT(leg.duration)}</span>
+              <span className="leg-meta">
+                {fmt(leg.distance)} · {fmtT(leg.duration)} <DiffChip level={leg.difficulty} reasons={leg.reasons} />
+              </span>
             </summary>
             <ul>
               {leg.guides.map((g, j) => (

@@ -115,3 +115,12 @@ body { font-family: 'Apple SD Gothic Neo', Pretendard, system-ui, sans-serif; co
   .side { border-right: 0; border-top: 1px solid #e2e8f0; }
   .topbar .legend { display: none; }
 }
+
+/* 이동 난이도 칩 */
+.diff {
+  display: inline-block; font-size: 11px; font-weight: 700;
+  border-radius: 20px; padding: 2px 9px; vertical-align: 1px;
+}
+.diff.easy { background: #dcfce7; color: #15803d; }
+.diff.mid { background: #fef9c3; color: #a16207; }
+.diff.hard { background: #ffe4e6; color: #be123c; }
