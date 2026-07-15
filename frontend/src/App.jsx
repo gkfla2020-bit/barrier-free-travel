@@ -59,8 +59,9 @@ export default function App() {
   const [course, setCourse] = useState([])
   const [route, setRoute] = useState(null)
   const [loading, setLoading] = useState(false)
-  const [survey, setSurvey] = useState(false)
+  const [survey, setSurvey] = useState(true) // 첫 화면 = 페르소나 설문 (스펙 1단계)
   const [deck, setDeck] = useState(null) // [{place, detail}] — 카드 스와이프 후보
+  const [persona, setPersona] = useState(null) // {type, badges[], tastes[]}
 
   const placeById = useMemo(
     () => Object.fromEntries(places.map((p) => [p.contentId, p])),
@@ -78,7 +79,11 @@ export default function App() {
     setLoading(true)
     setRoute(null)
     try {
-      const res = await postChat(text)
+      // 페르소나가 있으면 요청에 자동 반영 — 백엔드 후보 필터와 LLM이 함께 활용
+      const apiMsg = persona
+        ? `${text}\n(여행자 정보: ${persona.type} / 필수 시설: ${persona.badges.map((b) => BADGE_LABELS[b]).join(', ') || '없음'}${persona.tastes.length ? ` / 취향: ${persona.tastes.join(', ')}` : ''})`
+        : text
+      const res = await postChat(apiMsg)
       const resolved = (res.course || [])
         .sort((a, b) => a.order - b.order)
         .map((c) => ({ ...c, place: placeById[c.contentId] }))
@@ -101,27 +106,28 @@ export default function App() {
   }
 
   // 설문(스펙 1단계) → 안전지대 필터(2단계): 조건 100% 만족 장소만, 근접순 5+2곳
-  const handleSurvey = async (persona) => {
+  const handleSurvey = async (p) => {
     setSurvey(false)
+    setPersona(p)
     const required = [...new Set([
-      ...persona.badges,
-      ...(persona.type.includes('휠체어') ? ['wheelchair'] : []),
+      ...p.badges,
+      ...(p.type.includes('휠체어') ? ['wheelchair'] : []),
     ])]
     const near = (list) => [...list].sort((a, b) => distKm(a, CENTER) - distKm(b, CENTER))
     const match = (p) => required.every((b) => p.badges.includes(b))
-    let tours = near(places.filter((p) => p.type === 12 && match(p)))
-    let foods = near(places.filter((p) => p.type === 39 && match(p)))
+    let tours = near(places.filter((pl) => pl.type === 12 && match(pl)))
+    let foods = near(places.filter((pl) => pl.type === 39 && match(pl)))
     if (tours.length + foods.length < 4) { // 조건이 너무 빡빡하면 완화하되 사실대로 알림
-      tours = near(places.filter((p) => p.type === 12))
-      foods = near(places.filter((p) => p.type === 39))
+      tours = near(places.filter((pl) => pl.type === 12))
+      foods = near(places.filter((pl) => pl.type === 39))
       setMessages((m) => [...m, { role: 'assistant', content: '⚠️ 모든 조건을 만족하는 곳이 부족해 일부 조건을 완화한 후보를 보여드려요. 카드의 배지를 꼭 확인해주세요.' }])
     }
     const cand = [...tours.slice(0, 5), ...foods.slice(0, 2)]
-    const details = await Promise.all(cand.map((p) => fetchPlaceDetail(p.contentId).catch(() => null)))
-    setDeck(cand.map((p, i) => ({ place: p, detail: details[i] })))
+    const details = await Promise.all(cand.map((pl) => fetchPlaceDetail(pl.contentId).catch(() => null)))
+    setDeck(cand.map((pl, i) => ({ place: pl, detail: details[i] })))
     setMessages((m) => [...m, {
       role: 'assistant',
-      content: `${persona.type} 기준, 조건(${required.map((b) => BADGE_LABELS[b] || b).join(', ') || '무장애 인증'})을 만족하는 안전지대 후보 ${cand.length}곳을 골랐어요. 카드를 넘기며 마음에 드는 곳을 담아보세요!`,
+      content: `${p.type} 기준, 조건(${required.map((b) => BADGE_LABELS[b] || b).join(', ') || '무장애 인증'})을 만족하는 안전지대 후보 ${cand.length}곳을 골랐어요. 카드를 넘기며 마음에 드는 곳을 담아보세요!`,
     }])
   }
 
@@ -158,6 +164,12 @@ export default function App() {
       <header className="topbar">
         <h1>♿ 모두의 여행</h1>
         <span className="sub">무장애 관광지 {places.length}곳 · 계단 회피 경로 · AI 코스 추천</span>
+        {persona && (
+          <button className="persona-pill" onClick={() => setSurvey(true)}
+                  title="설문 다시 하기">
+            {persona.type} · 필수 {persona.badges.length}개 ✏️
+          </button>
+        )}
         <span className="legend">
           <i className="dot tour" /> 관광지 <i className="dot food" /> 음식점
           <i className="line ok" /> 무계단 <i className="line warn" /> 계단 주의

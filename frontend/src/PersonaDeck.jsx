@@ -31,9 +31,14 @@ export function PersonaSurvey({ onSubmit, onClose }) {
 
   return (
     <section className="persona">
-      <div className="p-head">
-        <strong>📋 나에게 맞는 여행 조건</strong>
-        <button className="p-close" onClick={onClose} aria-label="닫기">✕</button>
+      <div className="p-hero">
+        <div className="p-hero-icon">♿</div>
+        <h2>어떤 여행자이신가요?</h2>
+        <p>이동 조건에 <b>100% 맞는 안전한 장소만</b> 골라드릴게요.<br />
+          딱 세 가지만 알려주세요 — 30초면 충분해요.</p>
+        <div className="p-steps">
+          <span className="on">① 이동 조건</span><span>② 후보 카드</span><span>③ 맞춤 코스</span>
+        </div>
       </div>
       <p className="p-q">이동 약자 유형 <em>필수</em></p>
       <div className="p-row">
@@ -59,6 +64,9 @@ export function PersonaSurvey({ onSubmit, onClose }) {
               onClick={() => onSubmit({ type, badges: [...facs], tastes: [...tastes] })}>
         🃏 조건에 맞는 후보 보기
       </button>
+      <button className="p-skip" onClick={onClose}>
+        건너뛰고 채팅으로 물어볼게요 →
+      </button>
     </section>
   )
 }
@@ -66,19 +74,15 @@ export function PersonaSurvey({ onSubmit, onClose }) {
 export function CardDeck({ cards, onDone, onClose }) {
   const [idx, setIdx] = useState(0)
   const [picked, setPicked] = useState([])
-  const [anim, setAnim] = useState('')
 
   const card = cards[idx]
+  // 상태 전환은 클릭 즉시 처리 (타이머에 넣으면 탭 스로틀링·연타에서 클릭 유실).
+  // 애니메이션은 다음 카드의 등장 효과(key 리마운트)로 처리 — 로직과 완전 분리.
   const advance = (take) => {
-    if (anim) return // 애니메이션 중 연타 방지 (중복 담기/스킵 버그)
-    setAnim(take ? 'take' : 'toss')
-    setTimeout(() => {
-      setAnim('')
-      const next = take ? [...picked, card] : picked
-      if (take) setPicked(next)
-      if (idx + 1 >= cards.length) onDone(next)
-      else setIdx(idx + 1)
-    }, 220)
+    const next = take ? [...picked, card] : picked
+    if (take) setPicked(next)
+    if (idx + 1 >= cards.length) onDone(next)
+    else setIdx(idx + 1)
   }
 
   if (!card) return null
@@ -91,7 +95,7 @@ export function CardDeck({ cards, onDone, onClose }) {
         <button className="p-close" onClick={() => onDone(picked)} aria-label="선택 종료">완료</button>
         <button className="p-close" onClick={onClose} aria-label="닫기">✕</button>
       </div>
-      <div className={`card ${anim}`}>
+      <div className="card enter" key={idx}>
         {card.detail?.image
           ? <img src={card.detail.image} alt="" className="card-img" />
           : <div className="card-img none">🏛️</div>}

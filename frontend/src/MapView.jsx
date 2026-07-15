@@ -64,13 +64,20 @@ export default function MapView({ places, course, route }) {
     let cancelled = false
     loadTmap().then((T) => {
       if (cancelled || mapRef.current) return
+      elRef.current.innerHTML = '' // StrictMode/HMR 재마운트 시 이전 인스턴스 잔재 제거
       mapRef.current = new T.Map(elRef.current, {
         center: new T.LatLng(37.5788, 126.977),
         width: '100%', height: '100%', zoom: 15, httpsMode: true,
       })
+      if (import.meta.env.DEV) window.__tmap = mapRef.current
       setReady(true)
     })
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      try { mapRef.current?.destroy?.() } catch { /* Tmap destroy 미지원 대비 */ }
+      if (elRef.current) elRef.current.innerHTML = ''
+      mapRef.current = null
+    }
   }, [])
 
   // 전체 장소 점 마커
@@ -114,18 +121,21 @@ export default function MapView({ places, course, route }) {
   }, [ready, course])
 
   // 경로 폴리라인 — Tmap 좌표를 Tmap 지도에 그리므로 도로에 정확히 붙는다
+  // ⚠️ Tmapv2.fitBounds는 빈 LatLngBounds+extend 조합에서 (27,-180)으로 날아가는
+  //    버그가 있어 직접 중심·줌을 계산한다.
   useEffect(() => {
     if (!ready) return
     const T = window.Tmapv2
     clear('route')
-    const bounds = new T.LatLngBounds()
-    let hasPoint = false
+    let minLat = 90, maxLat = -90, minLng = 180, maxLng = -180, hasPoint = false
     route?.legs?.forEach((leg) => {
       const path = leg.polyline.map(([lat, lng]) => {
-        const ll = new T.LatLng(lat, lng)
-        bounds.extend(ll)
+        if (lat < minLat) minLat = lat
+        if (lat > maxLat) maxLat = lat
+        if (lng < minLng) minLng = lng
+        if (lng > maxLng) maxLng = lng
         hasPoint = true
-        return ll
+        return new T.LatLng(lat, lng)
       })
       const line = new T.Polyline({
         path,
@@ -137,7 +147,12 @@ export default function MapView({ places, course, route }) {
       })
       overlaysRef.current.route.push(line)
     })
-    if (hasPoint) mapRef.current.fitBounds(bounds)
+    if (hasPoint) {
+      const spanKm = Math.max((maxLat - minLat) * 111, (maxLng - minLng) * 88)
+      const zoom = spanKm > 8 ? 12 : spanKm > 4 ? 13 : spanKm > 2 ? 14 : spanKm > 0.8 ? 15 : 16
+      mapRef.current.setCenter(new T.LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2))
+      mapRef.current.setZoom(zoom)
+    }
   }, [ready, route])
 
   return <div id="map" ref={elRef} role="application" aria-label="무장애 여행 지도" />

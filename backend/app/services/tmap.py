@@ -15,29 +15,53 @@ INFO_TURNS = {125: "육교", 126: "지하보도", 128: "경사로", 218: "엘리
 _cache: dict[tuple, dict] = {}
 
 
-# 이동 난이도 기준 (기획 스펙 기반, 도보 전용 코스에 맞게 거리 임계만 조정:
-# 스펙의 300/700m는 대중교통 잔여도보 기준이라 도보 코스에 그대로 쓰면 전부 '어려움'이 됨)
-DIST_MEDIUM = 500   # m 초과 → 중간
-DIST_HARD = 1200    # m 초과 → 어려움
+# ── 이동 난이도 산정 ──────────────────────────────────────────────
+# 원칙 1  worst-element: 경로에서 가장 어려운 요소 하나가 최종 난이도를 정한다.
+# 원칙 2  보수적 판정: 데이터로 확인 불가한 것(계단 칸수, 경사 각도, 육교·지하보도의
+#         승강설비 유무)은 전부 위험한 쪽으로 분류한다. "아마 되겠지"는 금지.
+# 원칙 3  이유 병기: 난이도만 던지지 않고 근거를 함께 보여준다.
+#
+# 어려움: 계단 1회+ · 육교/지하보도 1회+ · 도보 1200m 초과 · 경사로 3회+
+# 중간  : 경사로 1~2회 · 횡단보도 5회+ · 도보 500~1200m
+# 보정  : 중간 요소 4개 이상 → 어려움 (기획 스펙)
+# 거리 임계(500/1200m)는 도보 전용 코스 기준 — 스펙의 300/700m는 대중교통 잔여도보 기준.
+DIST_MEDIUM = 500
+DIST_HARD = 1200
+CROSSWALK_MEDIUM = 5   # 회 이상 → 중간 (연석·신호 압박, 단 도심 특성상 어려움까진 과잉)
+SLOPE_HARD = 3         # 회 이상 → 어려움 (각도 데이터가 없어 횟수로 근사)
+COURSE_HARD_TOTAL = 3000  # m — 이동약자 반나절 권장 상한, 초과 시 코스 난이도 어려움
 _RANK = {"쉬움": 0, "중간": 1, "어려움": 2}
 
 
-def _difficulty(distance: int, stairs_cnt: int, slope_cnt: int) -> tuple[str, list[str]]:
-    """경로 내 가장 어려운 요소가 최종 난이도 (worst-element 방식)."""
-    level, reasons = "쉬움", []
-    if stairs_cnt:
-        level = "어려움"
-        reasons.append(f"계단 구간 {stairs_cnt}회")
-    if slope_cnt:
-        level = max(level, "중간", key=_RANK.get)
-        reasons.append(f"경사로 {slope_cnt}회")
+def _difficulty(distance: int, c: dict) -> tuple[str, list[str]]:
+    hard, medium = [], []
+    if c["stairs"]:
+        hard.append(f"계단 구간 {c['stairs']}회")
+    if c["bridge"]:
+        hard.append(f"육교·지하보도 {c['bridge']}회 (승강설비 확인 불가)")
+    if c["slope"] >= SLOPE_HARD:
+        hard.append(f"경사로 {c['slope']}회")
+    elif c["slope"]:
+        medium.append(f"경사로 {c['slope']}회")
+    if c["crosswalk"] >= CROSSWALK_MEDIUM:
+        medium.append(f"횡단보도 {c['crosswalk']}회")
     if distance > DIST_HARD:
-        level = "어려움"
-        reasons.append(f"도보 {distance}m")
+        hard.append(f"도보 {distance}m")
     elif distance > DIST_MEDIUM:
-        level = max(level, "중간", key=_RANK.get)
-        reasons.append(f"도보 {distance}m")
-    return level, reasons
+        medium.append(f"도보 {distance}m")
+
+    if hard:
+        return "어려움", hard + medium
+    if len(medium) >= 4:
+        return "어려움", medium
+    if medium:
+        return "중간", medium
+    return "쉬움", []
+
+
+CROSSWALKS = set(range(211, 218))          # 횡단보도 계열 turnType
+BRIDGE_TURNS = {125: "육교", 126: "지하보도"}
+BRIDGE_FACILITY = {"12", "14", "18"}       # LineString facilityType: 육교/지하보도/지하철지하보도
 
 
 def _parse(data: dict, stairs_forced: bool) -> dict:
@@ -45,38 +69,51 @@ def _parse(data: dict, stairs_forced: bool) -> dict:
     guides: list[str] = []
     distance = duration = 0
     stairs = stairs_forced
-    stairs_cnt = slope_cnt = elevator_cnt = 0
+    counts = {"stairs": 0, "slope": 0, "elevator": 0, "crosswalk": 0, "bridge": 0}
+    facility_bridge = 0
 
     for feat in data.get("features", []):
         geom, props = feat["geometry"], feat["properties"]
         if geom["type"] == "LineString":
             # Tmap은 [경도, 위도] 순서 → [lat, lng]로 뒤집는다
             polyline.extend([[c[1], c[0]] for c in geom["coordinates"]])
+            if str(props.get("facilityType", "")) in BRIDGE_FACILITY:
+                facility_bridge += 1
         elif geom["type"] == "Point":
             turn = props.get("turnType")
             desc = (props.get("description") or "").strip()
             if turn in STAIRS:
                 stairs = True
-                stairs_cnt += 1
+                counts["stairs"] += 1
                 desc = f"⚠️ 계단 구간: {desc}"
-            elif turn in INFO_TURNS:
-                if turn == 128:
-                    slope_cnt += 1
-                elif turn == 218:
-                    elevator_cnt += 1
-                desc = f"[{INFO_TURNS[turn]}] {desc}"
+            elif turn in BRIDGE_TURNS:
+                counts["bridge"] += 1
+                desc = f"⚠️ {BRIDGE_TURNS[turn]}(승강설비 확인 불가): {desc}"
+            elif turn in CROSSWALKS:
+                counts["crosswalk"] += 1
+            elif turn == 128:
+                counts["slope"] += 1
+                desc = f"[경사로] {desc}"
+            elif turn == 218:
+                counts["elevator"] += 1
+                desc = f"[엘리베이터] {desc}"
             if desc:
                 guides.append(desc)
             if props.get("pointType") == "SP":
                 distance = int(props.get("totalDistance", 0))
                 duration = int(props.get("totalTime", 0))
 
-    level, reasons = _difficulty(distance, stairs_cnt, slope_cnt)
-    if elevator_cnt:
-        reasons.append(f"엘리베이터 {elevator_cnt}회")
+    # 안내점에 안 잡히고 구간 시설물로만 잡히는 육교/지하보도 보완 (중복 방지 위해 max)
+    counts["bridge"] = max(counts["bridge"], facility_bridge)
+
+    level, reasons = _difficulty(distance, counts)
+    if counts["elevator"]:
+        reasons.append(f"엘리베이터 경유 {counts['elevator']}회")
+    if counts["bridge"]:
+        stairs = True  # 육교·지하보도는 계단 가능성으로도 취급 (지도에 경고색)
     return {"polyline": polyline, "distance": distance, "duration": duration,
             "guides": guides, "stairsPossible": stairs, "fallback": False,
-            "difficulty": level, "reasons": reasons}
+            "difficulty": level, "reasons": reasons, "counts": counts}
 
 
 def _leg(start: dict, end: dict) -> dict:
@@ -120,17 +157,28 @@ def route(waypoints: list[dict]) -> dict:
     if all(l["fallback"] for l in legs) and FIXTURE.exists():
         return json.loads(FIXTURE.read_text())
 
-    # 코스 전체 난이도: 최악 구간 기준 + '중간' 4개 이상이면 어려움 보정 (기획 스펙)
+    # 코스 전체 난이도: 최악 구간 + 중간 4개 이상 보정 + 총거리 상한 (반나절 3km)
+    total = sum(l["distance"] for l in legs)
     worst = max((l["difficulty"] for l in legs), key=_RANK.get, default="쉬움")
     if worst == "중간" and sum(1 for l in legs if l["difficulty"] == "중간") >= 4:
         worst = "어려움"
-    total_stairs = sum(l["difficulty"] == "어려움" and "계단" in " ".join(l["reasons"]) for l in legs)
+
+    agg = {k: sum(l.get("counts", {}).get(k, 0) for l in legs)
+           for k in ("stairs", "bridge", "slope", "crosswalk", "elevator")}
     reasons = []
-    if total_stairs:
-        reasons.append(f"계단 포함 구간 {total_stairs}개")
-    reasons.append(f"총 도보 {sum(l['distance'] for l in legs)}m")
+    if agg["stairs"]:
+        reasons.append(f"계단 구간 {agg['stairs']}회")
+    if agg["bridge"]:
+        reasons.append(f"육교·지하보도 {agg['bridge']}회")
+    if total > COURSE_HARD_TOTAL:
+        worst = "어려움"
+        reasons.append(f"총 도보 {total}m — 반나절 권장(3km) 초과")
+    else:
+        reasons.append(f"총 도보 {total}m")
+    if agg["crosswalk"]:
+        reasons.append(f"횡단보도 {agg['crosswalk']}회")
 
     return {"legs": legs,
-            "totalDistance": sum(l["distance"] for l in legs),
+            "totalDistance": total,
             "totalDuration": sum(l["duration"] for l in legs),
             "difficulty": worst, "reasons": reasons}
