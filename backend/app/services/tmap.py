@@ -25,11 +25,11 @@ _cache: dict[tuple, dict] = {}
 # 중간  : 경사로 1~2회 · 횡단보도 5회+ · 도보 500~1200m
 # 보정  : 중간 요소 4개 이상 → 어려움 (기획 스펙)
 # 거리 임계(500/1200m)는 도보 전용 코스 기준 — 스펙의 300/700m는 대중교통 잔여도보 기준.
-DIST_MEDIUM = 500
-DIST_HARD = 1200
+DIST_MEDIUM = 700
+DIST_HARD = 1500
 CROSSWALK_MEDIUM = 5   # 회 이상 → 중간 (연석·신호 압박, 단 도심 특성상 어려움까진 과잉)
 SLOPE_HARD = 3         # 회 이상 → 어려움 (각도 데이터가 없어 횟수로 근사)
-COURSE_HARD_TOTAL = 3000  # m — 이동약자 반나절 권장 상한, 초과 시 코스 난이도 어려움
+COURSE_HARD_TOTAL = 4000  # m — 이동약자 반나절 권장 상한, 초과 시 코스 난이도 어려움
 _RANK = {"쉬움": 0, "중간": 1, "어려움": 2}
 
 
@@ -172,7 +172,7 @@ def route(waypoints: list[dict]) -> dict:
         reasons.append(f"육교·지하보도 {agg['bridge']}회")
     if total > COURSE_HARD_TOTAL:
         worst = "어려움"
-        reasons.append(f"총 도보 {total}m — 반나절 권장(3km) 초과")
+        reasons.append(f"총 도보 {total}m — 반나절 권장(4km) 초과")
     else:
         reasons.append(f"총 도보 {total}m")
     if agg["crosswalk"]:

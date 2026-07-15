@@ -7,27 +7,41 @@ import { Logo, BadgeIcon } from './Icons'
 import { fetchAllPlaces, fetchPlaceDetail, postChat, postRoute, BADGE_LABELS } from './api'
 import './App.css'
 
-const CENTER = { lat: 37.5788, lng: 126.977 } // 경복궁 (덤프 중심)
-
-// 지원 예정 지역 10곳 — 현재 데이터는 서울(경복궁 일대)만. 지역별 덤프만 추가하면 확장.
+// 지역 레지스트리 — ready 지역은 실데이터(덤프) 서빙, 나머지는 답정너 안내 후 전환 유도.
+// 채팅에서 keywords가 감지되면 해당 지역으로 자동 연결된다.
 const REGIONS = [
-  { id: 'seoul', name: '서울 · 경복궁 일대', ready: true },
-  { id: 'busan', name: '부산 · 해운대' },
-  { id: 'gyeongju', name: '경주 · 대릉원' },
-  { id: 'jeonju', name: '전주 · 한옥마을' },
-  { id: 'gangneung', name: '강릉 · 경포' },
-  { id: 'yeosu', name: '여수 · 오동도' },
-  { id: 'jeju', name: '제주 · 제주시' },
-  { id: 'suwon', name: '수원 · 화성' },
-  { id: 'incheon', name: '인천 · 개항장' },
-  { id: 'daegu', name: '대구 · 근대골목' },
+  { id: 'seoul', name: '서울 · 경복궁 일대', ready: true,
+    center: { lat: 37.5788, lng: 126.977 }, bbox: [37.4, 37.7, 126.8, 127.2],
+    keywords: ['서울', '경복궁', '광화문', '종로', '북촌', '덕수궁', '인사동'] },
+  { id: 'gyeongju', name: '경주 · 대릉원', ready: true,
+    center: { lat: 35.837, lng: 129.216 }, bbox: [35.65, 36.05, 129.0, 129.45],
+    keywords: ['경주', '대릉원', '첨성대', '불국사', '황리단길', '동궁'] },
+  { id: 'busan', name: '부산 · 해운대', keywords: ['부산', '해운대', '광안리'],
+    canned: '부산은 해운대 무장애 해변 산책로와 영화의전당 일대가 휠체어 접근성이 좋기로 알려져 있어요.' },
+  { id: 'jeonju', name: '전주 · 한옥마을', keywords: ['전주', '한옥마을'],
+    canned: '전주 한옥마을은 경기전 앞 큰길과 태조로 구간이 비교적 평탄해 이동약자 여행 수요가 많은 곳이에요.' },
+  { id: 'gangneung', name: '강릉 · 경포', keywords: ['강릉', '경포', '안목'],
+    canned: '강릉은 경포호 순환 산책로가 평탄하고 안목해변 카페거리도 접근성이 좋은 편이에요.' },
+  { id: 'yeosu', name: '여수 · 오동도', keywords: ['여수', '오동도'],
+    canned: '여수 오동도는 셔틀(동백열차)로 진입할 수 있고 이순신광장 일대가 평탄해요.' },
+  { id: 'jeju', name: '제주 · 제주시', keywords: ['제주', '용두암'],
+    canned: '제주는 용두암 해안 산책로와 동문시장 일대가 휠체어 접근이 수월한 편이에요.' },
+  { id: 'suwon', name: '수원 · 화성', keywords: ['수원', '화성행궁'],
+    canned: '수원 화성행궁 광장과 행리단길 초입은 평탄해서 이동약자 방문이 많은 곳이에요.' },
+  { id: 'incheon', name: '인천 · 개항장', keywords: ['인천', '개항장', '월미도'],
+    canned: '인천 개항장 거리와 월미도 문화의거리는 보도가 넓고 평탄한 편이에요.' },
+  { id: 'daegu', name: '대구 · 근대골목', keywords: ['대구', '근대골목', '김광석'],
+    canned: '대구 근대골목 일부 평탄 구간과 김광석다시그리기길이 접근성 좋은 코스로 꼽혀요.' },
 ]
+
+const detectRegion = (text) =>
+  REGIONS.find((r) => r.keywords?.some((k) => text.includes(k)))
 const distKm = (a, b) => Math.hypot((a.lat - b.lat) * 111, (a.lng - b.lng) * 88)
 
 // 담은 장소들을 가까운 순서로 자동 정렬 (최근접 이웃)
-function optimizeOrder(items) {
+function optimizeOrder(items, center) {
   if (items.length <= 2) return items
-  const start = items.reduce((s, p) => (distKm(p.place, CENTER) < distKm(s.place, CENTER) ? p : s))
+  const start = items.reduce((s, p) => (distKm(p.place, center) < distKm(s.place, center) ? p : s))
   const order = [start]
   const rest = new Set(items.filter((i) => i !== start))
   while (rest.size) {
@@ -64,7 +78,7 @@ const GREETING = {
   role: 'assistant',
   content:
     '안녕하세요! 이동약자를 위한 무장애 여행 플래너 "모두의 여행"입니다.\n' +
-    '어디로, 어떤 조건으로 여행하고 싶으신가요? (현재 데모 지역: 경복궁 일대 3km — 무장애 인증 장소 104곳)\n' +
+    '어디로, 어떤 조건으로 여행하고 싶으신가요? (지금 바로 가능: 서울 경복궁 일대 · 경주 대릉원 일대)\n' +
     '예: "휠체어로 반나절 코스", "유모차 가족 코스"처럼 말씀해주세요.',
 }
 
@@ -78,6 +92,7 @@ export default function App() {
   const [deck, setDeck] = useState(null) // [{place, detail}] — 카드 스와이프 후보
   const [persona, setPersona] = useState(null) // {type, badges[], tastes[]}
   const [mapFilter, setMapFilter] = useState(null) // 지도 시설 필터 (badge 키)
+  const [region, setRegion] = useState(REGIONS[0]) // 현재 지역 (ready 지역만 진입)
 
   const placeById = useMemo(
     () => Object.fromEntries(places.map((p) => [p.contentId, p])),
@@ -85,13 +100,37 @@ export default function App() {
   )
 
   useEffect(() => {
-    fetchAllPlaces().then(setPlaces).catch(() => {
+    fetchAllPlaces(region.bbox).then(setPlaces).catch(() => {
       setMessages((m) => [...m, { role: 'assistant', content: '⚠️ 백엔드 서버에 연결할 수 없습니다. uvicorn이 켜져 있는지 확인해주세요.' }])
     })
-  }, [])
+  }, [region])
+
+  // 지역 전환: 코스·경로 초기화 + 지도는 MapView가 center prop으로 이동
+  const switchRegion = (r) => {
+    setRegion(r)
+    setCourse([])
+    setRoute(null)
+  }
 
   const handleSend = async (text) => {
     setMessages((m) => [...m, { role: 'user', content: text }])
+
+    // 사용자가 지역을 먼저 말하면 여기서 연결 (미지원 지역은 답정너 안내)
+    const detected = detectRegion(text)
+    if (detected && !detected.ready) {
+      setMessages((m) => [...m, {
+        role: 'assistant',
+        content: `${detected.canned}\n상세 접근성 데이터와 코스 기능은 준비 중이에요. 지금은 서울·경주에서 전체 기능을 쓸 수 있어요!`,
+        regions: REGIONS.filter((r) => r.ready),
+      }])
+      return
+    }
+    const active = detected && detected.id !== region.id ? detected : region
+    if (active.id !== region.id) {
+      switchRegion(active)
+      setMessages((m) => [...m, { role: 'assistant', content: `${active.name}(으)로 안내할게요!` }])
+    }
+
     setLoading(true)
     setRoute(null)
     try {
@@ -99,10 +138,13 @@ export default function App() {
       const apiMsg = persona
         ? `${text}\n(여행자 정보: ${persona.type} / 필수 시설: ${persona.badges.map((b) => BADGE_LABELS[b]).join(', ') || '없음'}${persona.tastes.length ? ` / 취향: ${persona.tastes.join(', ')}` : ''})`
         : text
-      const res = await postChat(apiMsg)
+      const res = await postChat(apiMsg, active.id)
+      const pool = active.id === region.id && places.length
+        ? placeById
+        : Object.fromEntries((await fetchAllPlaces(active.bbox)).map((p) => [p.contentId, p]))
       const resolved = (res.course || [])
         .sort((a, b) => a.order - b.order)
-        .map((c) => ({ ...c, place: placeById[c.contentId] }))
+        .map((c) => ({ ...c, place: pool[c.contentId] }))
         .filter((c) => c.place)
       setCourse(resolved)
       setMessages((m) => [...m, { role: 'assistant', content: res.reply, course: resolved.length ? resolved : undefined }])
@@ -135,27 +177,30 @@ export default function App() {
   const handleRegion = (r) => {
     setMessages((m) => [...m, { role: 'user', content: r.name }])
     if (!r.ready) {
-      setMessages((m) => [...m, { role: 'assistant', content: `${r.name} 지역은 준비 중이에요. 지금은 서울 · 경복궁 일대에서 데모를 체험할 수 있어요!` }])
+      setMessages((m) => [...m, { role: 'assistant', content: `${r.canned || ''}\n상세 데이터는 준비 중이에요. 지금은 서울·경주에서 체험할 수 있어요!` }])
       return
     }
-    buildDeck(persona)
+    if (r.id !== region.id) switchRegion(r)
+    buildDeck(persona, r)
   }
 
   // 안전지대 필터(2단계): 조건 100% 만족 장소만.
   // '여유롭게'면 앵커(중심에서 가장 가까운 관광지) 반경 700m 클러스터로 묶어
   // 구간을 짧게 만든다 — 쉬움/중간 코스가 실제로 나오는 핵심.
-  const buildDeck = async (p) => {
+  const buildDeck = async (p, r = region) => {
+    const list = await fetchAllPlaces(r.bbox).catch(() => places)
+    const center = r.center
     const required = [...new Set([
       ...p.badges,
       ...(p.type.includes('휠체어') ? ['wheelchair'] : []),
     ])]
-    const near = (list) => [...list].sort((a, b) => distKm(a, CENTER) - distKm(b, CENTER))
-    const match = (p) => required.every((b) => p.badges.includes(b))
-    let tours = near(places.filter((pl) => pl.type === 12 && match(pl)))
-    let foods = near(places.filter((pl) => pl.type === 39 && match(pl)))
+    const near = (arr) => [...arr].sort((a, b) => distKm(a, center) - distKm(b, center))
+    const match = (pl) => required.every((b) => pl.badges.includes(b))
+    let tours = near(list.filter((pl) => pl.type === 12 && match(pl)))
+    let foods = near(list.filter((pl) => pl.type === 39 && match(pl)))
     if (tours.length + foods.length < 4) { // 조건이 너무 빡빡하면 완화하되 사실대로 알림
-      tours = near(places.filter((pl) => pl.type === 12))
-      foods = near(places.filter((pl) => pl.type === 39))
+      tours = near(list.filter((pl) => pl.type === 12))
+      foods = near(list.filter((pl) => pl.type === 39))
       setMessages((m) => [...m, { role: 'assistant', content: '⚠️ 모든 조건을 만족하는 곳이 부족해 일부 조건을 완화한 후보를 보여드려요. 카드의 배지를 꼭 확인해주세요.' }])
     }
     let selT = tours.slice(0, 5), selF = foods.slice(0, 2)
@@ -191,7 +236,7 @@ export default function App() {
       setMessages((m) => [...m, { role: 'assistant', content: '코스를 만들려면 2곳 이상 담아주세요. 설문부터 다시 시작할 수 있어요.' }])
       return
     }
-    const ordered = optimizeOrder(picked)
+    const ordered = optimizeOrder(picked, region.center)
     const resolved = ordered.map((c, i) => ({
       contentId: c.place.contentId, order: i + 1,
       reason: c.place.badges.map((b) => BADGE_LABELS[b]).join(' · ') || '무장애 인증 장소',
@@ -253,7 +298,7 @@ export default function App() {
         </div>
         <MapView
           places={mapFilter ? places.filter((p) => p.badges.includes(mapFilter)) : places}
-          course={course} route={route} />
+          course={course} route={route} center={region.center} />
       </main>
     </div>
   )

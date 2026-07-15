@@ -41,7 +41,7 @@ function popupHtml(p) {
   </div>`
 }
 
-export default function MapView({ places, course, route }) {
+export default function MapView({ places, course, route, center }) {
   const elRef = useRef(null)
   const mapRef = useRef(null)
   const [ready, setReady] = useState(false)
@@ -79,6 +79,14 @@ export default function MapView({ places, course, route }) {
       mapRef.current = null
     }
   }, [])
+
+  // 지역 전환 시 지도 이동
+  useEffect(() => {
+    if (!ready || !center) return
+    const T = window.Tmapv2
+    mapRef.current.setCenter(new T.LatLng(center.lat, center.lng))
+    mapRef.current.setZoom(15)
+  }, [ready, center?.lat, center?.lng])
 
   // 전체 장소 점 마커
   useEffect(() => {

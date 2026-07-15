@@ -19,8 +19,8 @@ sys.path.insert(0, str(ROOT))
 from app.services.badges import parse_badges, raw_korean  # noqa: E402 — 서버와 같은 파서 공유
 
 BASE = "https://apis.data.go.kr/B551011/KorWithService2"
-RAW_DIR = ROOT / "scripts" / "raw"
-OUT = ROOT / "app" / "data" / "seoul_places.json"
+RAW_DIR = ROOT / "scripts" / "raw"  # --region별 하위 폴더 사용
+OUT_DIR = ROOT / "app" / "data"
 
 calls = 0
 
@@ -108,14 +108,19 @@ def build_place(item: dict, offline: bool) -> dict | None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--region", default="seoul", help="지역 id — 출력 파일명 {region}_places.json")
     ap.add_argument("--lng", type=float, default=126.9770)  # 경복궁
     ap.add_argument("--lat", type=float, default=37.5788)
     ap.add_argument("--radius", type=int, default=3000)
     ap.add_argument("--offline", action="store_true", help="raw/ 캐시만으로 재생성")
     args = ap.parse_args()
 
-    RAW_DIR.mkdir(exist_ok=True)
-    OUT.parent.mkdir(exist_ok=True)
+    global RAW_DIR
+    RAW_DIR = RAW_DIR / args.region
+    out = OUT_DIR / f"{args.region}_places.json"
+
+    RAW_DIR.mkdir(parents=True, exist_ok=True)
+    OUT_DIR.mkdir(exist_ok=True)
 
     places, counts = [], {}
     for ctype in (12, 39):
@@ -129,15 +134,16 @@ def main() -> None:
                 print(f"  상세 {i + 1}/{len(listed)} (누적 호출 {calls})")
         counts[str(ctype)] = sum(1 for p in places if p["type"] == ctype)
 
-    OUT.write_text(json.dumps({
+    out.write_text(json.dumps({
         "meta": {"generatedAt": datetime.now(timezone.utc).isoformat(),
+                 "region": args.region,
                  "center": [args.lng, args.lat], "radius": args.radius,
                  "counts": counts},
         "places": places,
     }, ensure_ascii=False, indent=1))
 
     with_badges = sum(1 for p in places if p["badges"])
-    print(f"\n✅ {OUT.name}: 총 {len(places)}건 (관광지 {counts.get('12', 0)}, "
+    print(f"\n✅ {out.name}: 총 {len(places)}건 (관광지 {counts.get('12', 0)}, "
           f"음식점 {counts.get('39', 0)}) / 배지 1개 이상 {with_badges}건 / API 호출 {calls}회")
     if counts.get("39", 0) < 15:
         print("⚠️ 음식점 15건 미만 — radius 5000 재덤프 권장 (T+1 판정 기준)")
