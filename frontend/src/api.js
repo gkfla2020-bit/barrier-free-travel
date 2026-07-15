@@ -30,8 +30,8 @@ export const postRoute = (waypoints) =>
   }).then(json)
 
 export const BADGE_LABELS = {
-  wheelchair: '♿ 휠체어',
-  elevator: '🛗 엘리베이터',
-  toilet: '🚻 장애인 화장실',
-  parking: '🅿️ 장애인 주차',
+  wheelchair: '휠체어',
+  elevator: '엘리베이터',
+  toilet: '장애인 화장실',
+  parking: '장애인 주차',
 }

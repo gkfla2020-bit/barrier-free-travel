@@ -3,6 +3,7 @@ import MapView from './MapView'
 import ChatPanel from './ChatPanel'
 import RouteSteps from './RouteSteps'
 import { PersonaSurvey, CardDeck } from './PersonaDeck'
+import { Logo, BadgeIcon } from './Icons'
 import { fetchAllPlaces, fetchPlaceDetail, postChat, postRoute, BADGE_LABELS } from './api'
 import './App.css'
 
@@ -27,17 +28,17 @@ function optimizeOrder(items) {
 
 // 경로 설명은 LLM이 아니라 Tmap 실데이터에서 생성 — 계단 수·거리·시간이 100% 사실
 function routeSummary(r, course) {
-  const emoji = { 쉬움: '🟢', 중간: '🟡', 어려움: '🔴' }
+  const mark = { 쉬움: '[쉬움]', 중간: '[중간]', 어려움: '[어려움]' }
   const fmt = (m) => (m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${m}m`)
   const min = (s) => `${Math.max(1, Math.round(s / 60))}분`
   const legs = r.legs.map((l, i) => {
     const why = l.reasons?.length ? ` — ${l.reasons.join(', ')}` : ''
     return `${i + 1}. ${course[i].place.title} → ${course[i + 1].place.title}: ` +
-      `${fmt(l.distance)}·${min(l.duration)} ${emoji[l.difficulty]}${l.difficulty}${why}`
+      `${fmt(l.distance)}·${min(l.duration)} ${mark[l.difficulty]}${why}`
   })
   const head =
-    `🧭 이동 경로를 확인했어요. 총 도보 ${fmt(r.totalDistance)} · ${min(r.totalDuration)}\n` +
-    `이동 난이도: ${emoji[r.difficulty]} ${r.difficulty}` +
+    `이동 경로를 확인했어요. 총 도보 ${fmt(r.totalDistance)} · ${min(r.totalDuration)}\n` +
+    `이동 난이도: ${r.difficulty}` +
     (r.reasons?.length ? ` (${r.reasons.join(' · ')})` : '')
   const stairs = r.legs.some((l) => l.stairsPossible)
     ? '\n⚠️ 일부 구간에 계단이 있을 수 있어요. 왼쪽 경로 안내에서 우회 지점을 확인하세요.'
@@ -48,7 +49,7 @@ function routeSummary(r, course) {
 const GREETING = {
   role: 'assistant',
   content:
-    '안녕하세요! 이동약자를 위한 무장애 여행 플래너 "모두의 여행"입니다. 🧭\n' +
+    '안녕하세요! 이동약자를 위한 무장애 여행 플래너 "모두의 여행"입니다.\n' +
     '어디로, 어떤 조건으로 여행하고 싶으신가요? (현재 데모 지역: 경복궁 일대 3km — 무장애 인증 장소 104곳)\n' +
     '예: "휠체어로 반나절 코스", "유모차 가족 코스"처럼 말씀해주세요.',
 }
@@ -62,6 +63,7 @@ export default function App() {
   const [survey, setSurvey] = useState(true) // 첫 화면 = 페르소나 설문 (스펙 1단계)
   const [deck, setDeck] = useState(null) // [{place, detail}] — 카드 스와이프 후보
   const [persona, setPersona] = useState(null) // {type, badges[], tastes[]}
+  const [mapFilter, setMapFilter] = useState(null) // 지도 시설 필터 (badge 키)
 
   const placeById = useMemo(
     () => Object.fromEntries(places.map((p) => [p.contentId, p])),
@@ -162,17 +164,17 @@ export default function App() {
   return (
     <div className="layout">
       <header className="topbar">
-        <h1>♿ 모두의 여행</h1>
+        <h1><Logo /> 모두의 여행</h1>
         <span className="sub">무장애 관광지 {places.length}곳 · 계단 회피 경로 · AI 코스 추천</span>
         {persona && (
           <button className="persona-pill" onClick={() => setSurvey(true)}
                   title="설문 다시 하기">
-            {persona.type} · 필수 {persona.badges.length}개 ✏️
+            {persona.type} · 필수 {persona.badges.length}개 · 수정
           </button>
         )}
         <span className="legend">
           <i className="dot tour" /> 관광지 <i className="dot food" /> 음식점
-          <i className="line ok" /> 무계단 <i className="line warn" /> 계단 주의
+          <i className="line easy" /> 쉬움 <i className="line mid" /> 중간 <i className="line hard" /> 어려움
         </span>
       </header>
       <aside className="side">
@@ -181,7 +183,7 @@ export default function App() {
         {!survey && !deck && (
           <>
             <button className="persona-cta" onClick={() => setSurvey(true)}>
-              📋 설문으로 맞춤 코스 시작하기 <span>이동 조건 → 후보 카드 → 자동 코스</span>
+              설문으로 맞춤 코스 시작하기 <span>이동 조건 → 후보 카드 → 자동 코스</span>
             </button>
             <ChatPanel messages={messages} loading={loading} onSend={handleSend} course={course} />
             <RouteSteps route={route} course={course} />
@@ -189,7 +191,18 @@ export default function App() {
         )}
       </aside>
       <main className="map-wrap">
-        <MapView places={places} course={course} route={route} />
+        <div className="map-filters" role="group" aria-label="시설 필터">
+          <button className={!mapFilter ? 'on' : ''} onClick={() => setMapFilter(null)}>전체</button>
+          {['wheelchair', 'toilet', 'parking', 'elevator'].map((b) => (
+            <button key={b} className={mapFilter === b ? 'on' : ''}
+                    onClick={() => setMapFilter(mapFilter === b ? null : b)}>
+              <BadgeIcon badge={b} /> {BADGE_LABELS[b]}
+            </button>
+          ))}
+        </div>
+        <MapView
+          places={mapFilter ? places.filter((p) => p.badges.includes(mapFilter)) : places}
+          course={course} route={route} />
       </main>
     </div>
   )

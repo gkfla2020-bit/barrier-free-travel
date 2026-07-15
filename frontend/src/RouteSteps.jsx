@@ -2,12 +2,7 @@ const fmt = (m) => (m >= 1000 ? `${(m / 1000).toFixed(1)}km` : `${m}m`)
 const fmtT = (s) => `${Math.max(1, Math.round(s / 60))}분`
 
 function stepIcon(text) {
-  if (text.includes('계단')) return '⚠️'
-  if (text.includes('엘리베이터')) return '🛗'
-  if (text.includes('경사로')) return '↗️'
-  if (text.includes('횡단보도')) return '🚸'
-  if (text.includes('육교') || text.includes('지하보도')) return '🌉'
-  return '🚶'
+  return text.startsWith('⚠️') ? '' : '•' // 경고문은 자체 ⚠️ 포함, 나머지는 불릿
 }
 
 const DIFF_CLASS = { 쉬움: 'easy', 중간: 'mid', 어려움: 'hard' }
@@ -44,7 +39,7 @@ export default function RouteSteps({ route, course }) {
         return (
           <details key={i} className="leg" open={i === 0}>
             <summary>
-              <span className={`leg-line${leg.stairsPossible ? ' warn' : ''}`} />
+              <span className={`leg-line ${DIFF_CLASS[leg.difficulty] || 'easy'}${leg.stairsPossible ? ' dashed' : ''}`} />
               {from} → {to}
               <span className="leg-meta">
                 {fmt(leg.distance)} · {fmtT(leg.duration)} <DiffChip level={leg.difficulty} reasons={leg.reasons} />

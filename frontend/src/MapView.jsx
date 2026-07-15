@@ -137,11 +137,12 @@ export default function MapView({ places, course, route }) {
         hasPoint = true
         return new T.LatLng(lat, lng)
       })
+      const DIFF_COLOR = { 어려움: '#dc2626', 중간: '#f59e0b' }
       const line = new T.Polyline({
         path,
-        strokeColor: leg.stairsPossible ? '#e11d48' : '#2563eb',
+        strokeColor: DIFF_COLOR[leg.difficulty] || '#2563eb',
         strokeWeight: 6,
-        strokeStyle: leg.stairsPossible ? 'dash' : 'solid',
+        strokeStyle: leg.stairsPossible ? 'dash' : 'solid', // 점선 = 계단 가능성
         strokeOpacity: 90,
         map: mapRef.current,
       })

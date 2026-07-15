@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { BADGE_LABELS } from './api'
+import { Logo, BadgeIcon } from './Icons'
 
 export const MOBILITY_TYPES = ['전동 휠체어', '수동 휠체어+동반자', '유모차 가족', '고령 보행약자', '목발/깁스']
 const FACILITIES = [
-  { label: '🚻 장애인 화장실', badge: 'toilet' },
-  { label: '🅿️ 장애인 주차', badge: 'parking' },
-  { label: '🛗 엘리베이터', badge: 'elevator' },
-  { label: '♿ 휠체어 대여', badge: 'wheelchair' },
+  { label: '장애인 화장실', badge: 'toilet' },
+  { label: '장애인 주차', badge: 'parking' },
+  { label: '엘리베이터', badge: 'elevator' },
+  { label: '휠체어 대여', badge: 'wheelchair' },
 ]
 const TASTES = ['역사/문화', '자연/힐링', '인스타 핫플', '식도락']
 
@@ -32,7 +33,7 @@ export function PersonaSurvey({ onSubmit, onClose }) {
   return (
     <section className="persona">
       <div className="p-hero">
-        <div className="p-hero-icon">♿</div>
+        <div className="p-hero-logo"><Logo size={44} /></div>
         <h2>어떤 여행자이신가요?</h2>
         <p>이동 조건에 <b>100% 맞는 안전한 장소만</b> 골라드릴게요.<br />
           딱 세 가지만 알려주세요 — 30초면 충분해요.</p>
@@ -50,7 +51,7 @@ export function PersonaSurvey({ onSubmit, onClose }) {
       <div className="p-row">
         {FACILITIES.map((f) => (
           <Chip key={f.badge} active={facs.has(f.badge)} onClick={() => toggle(facs, setFacs)(f.badge)}>
-            {f.label}
+            <BadgeIcon badge={f.badge} /> {f.label}
           </Chip>
         ))}
       </div>
@@ -62,7 +63,7 @@ export function PersonaSurvey({ onSubmit, onClose }) {
       </div>
       <button className="p-submit"
               onClick={() => onSubmit({ type, badges: [...facs], tastes: [...tastes] })}>
-        🃏 조건에 맞는 후보 보기
+        조건에 맞는 후보 보기
       </button>
       <button className="p-skip" onClick={onClose}>
         건너뛰고 채팅으로 물어볼게요 →
@@ -91,14 +92,14 @@ export function CardDeck({ cards, onDone, onClose }) {
   return (
     <section className="deck">
       <div className="p-head">
-        <strong>🃏 마음에 들면 담기 ({idx + 1}/{cards.length} · 담음 {picked.length})</strong>
+        <strong>후보 살펴보기 ({idx + 1}/{cards.length} · 담음 {picked.length})</strong>
         <button className="p-close" onClick={() => onDone(picked)} aria-label="선택 종료">완료</button>
         <button className="p-close" onClick={onClose} aria-label="닫기">✕</button>
       </div>
       <div className="card enter" key={idx}>
         {card.detail?.image
           ? <img src={card.detail.image} alt="" className="card-img" />
-          : <div className="card-img none">🏛️</div>}
+          : <div className="card-img none">{card.place.title.slice(0, 1)}</div>}
         <div className="card-body">
           <div className="card-title">
             {card.place.title}
