@@ -54,7 +54,7 @@ function popupHtml(p) {
   </div>`
 }
 
-export default function MapView({ places, course, route, center, origin, restrooms = [], lineMode = 'difficulty' }) {
+export default function MapView({ places, course, route, center, origin, restrooms = [], lineMode = 'difficulty', hidden = false }) {
   const elRef = useRef(null)
   const mapRef = useRef(null)
   const [ready, setReady] = useState(false)
@@ -100,6 +100,18 @@ export default function MapView({ places, course, route, center, origin, restroo
     mapRef.current.setCenter(new T.LatLng(center.lat, center.lng))
     mapRef.current.setZoom(15)
   }, [ready, center?.lat, center?.lng])
+
+  // 온보딩(숨김) → 지도 단계 전환 시 리사이즈 — 숨김 상태에서 초기화된 Tmap은
+  // 컨테이너 크기 0으로 남아 타일이 안 그려질 수 있다.
+  useEffect(() => {
+    if (!ready || hidden) return
+    requestAnimationFrame(() => {
+      try {
+        const el = elRef.current
+        if (el && el.clientWidth > 0) mapRef.current.resize(el.clientWidth, el.clientHeight)
+      } catch { /* Tmap resize 미지원 대비 */ }
+    })
+  }, [ready, hidden])
 
   // 전체 장소 점 마커
   useEffect(() => {

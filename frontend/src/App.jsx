@@ -222,6 +222,7 @@ export default function App() {
   const [slopeBusy, setSlopeBusy] = useState(false) // 우회 재탐색 중
   const [lineMode, setLineMode] = useState('difficulty') // 지도 경로선 색 기준: 난이도 | 경사
   const [stage, setStage] = useState('title') // title | app — 타이틀 페이지에서 시작하기로 진입
+  const [sheetOpen, setSheetOpen] = useState(true) // 모바일 바텀시트 펼침 상태
   // 온보딩 핸들러가 출발지 설정+경로 생성을 직접 처리하는 동안 selectedDeparture 이펙트를
   // 건너뛰기 위한 플래그 (상태는 같은 배치에서 커밋돼 구분 불가 — ref여야 함)
   const onboardRouting = useRef(false)
@@ -283,6 +284,9 @@ export default function App() {
     () => Object.fromEntries(places.map((p) => [p.contentId, p])),
     [places],
   )
+
+  // 새 경로가 도착하면 모바일 시트를 펼쳐 요약을 먼저 보여준다 (접으면 지도 전면)
+  useEffect(() => { if (route) setSheetOpen(true) }, [route])
 
   const loadRoute = async (resolved, mode = travelMode, avoid = avoidSlope) => {
     const token = ++routeReq.current
@@ -758,8 +762,15 @@ export default function App() {
     return <TitlePage onStart={() => setStage('app')} />
   }
 
+  // 모바일 레이아웃 단계: 온보딩(설문·출발지/지역 입력·카드덱) 동안은 지도가 필요 없다 —
+  // 입력 흐름을 풀스크린으로. 코스가 만들어지면 지도가 주인공이 되고 패널은 바텀시트로.
+  const onboarding = survey || deck || awaitOnboard || awaitRegion || awaitDeparture
+  const sheetSummary = route
+    ? `도보 ${fmt(route.totalDistance)} · ${Math.max(1, Math.round(route.totalDuration / 60))}분 · ${route.difficulty}`
+    : course.length ? '코스 준비 중…' : '채팅'
+
   return (
-    <div className="layout">
+    <div className={`layout ${onboarding ? 'phase-onboard' : 'phase-map'} ${sheetOpen ? 'sheet-open' : 'sheet-closed'}`}>
       <header className="topbar">
         <h1><Logo /> 편해질지도</h1>
         <span className="sub">무장애 관광지 {places.length}곳 · 계단 회피 경로 · AI 코스 추천</span>
@@ -785,6 +796,15 @@ export default function App() {
         </span>
       </header>
       <aside className="side">
+        {/* 모바일 바텀시트 핸들 — 코스가 생긴 뒤(지도 단계)에만 CSS로 노출 */}
+        <button className="sheet-handle" type="button"
+                aria-expanded={sheetOpen}
+                aria-label={sheetOpen ? '패널 접기' : '패널 펼치기'}
+                onClick={() => setSheetOpen((o) => !o)}>
+          <span className="sheet-grabber" aria-hidden="true" />
+          <span className="sheet-summary">{sheetSummary}</span>
+          <span className="sheet-arrow" aria-hidden="true">{sheetOpen ? '▾' : '▴'}</span>
+        </button>
         {survey && <PersonaSurvey onSubmit={handleSurvey} onClose={() => setSurvey(false)} />}
         {deck && <CardDeck cards={deck} onDone={handleDeckDone} onClose={() => setDeck(null)} />}
         {!survey && !deck && (
@@ -832,6 +852,7 @@ export default function App() {
           places={mapFilter ? places.filter((p) => p.badges.includes(mapFilter)) : places}
           course={course} route={route} center={region.center}
           origin={route ? getOrigin(region) : null} lineMode={lineMode}
+          hidden={onboarding}
           restrooms={restrooms
             .map((it) => it.restroom)
             .filter((r) => r && !r.isSelf)} />
