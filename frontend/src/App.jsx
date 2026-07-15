@@ -6,7 +6,6 @@ import { PersonaSurvey, CardDeck } from './PersonaDeck'
 import { Logo, BadgeIcon } from './Icons'
 import { fetchAllPlaces, fetchPlaceDetail, postChat, postRoute, postRestroomCoverage, BADGE_LABELS } from './api'
 import { validDepartures, recognizeDeparture } from './departures'
-import DepartureSelector from './DepartureSelector'
 import './App.css'
 
 // 지역 레지스트리 — ready 지역은 실데이터(덤프) 서빙, 나머지는 답정너 안내 후 전환 유도.
@@ -177,6 +176,7 @@ export default function App() {
   const [myLoc, setMyLoc] = useState(null) // 사용자가 허용한 실제 위치
   const [routeCourse, setRouteCourse] = useState([]) // 출발지 포함 경로용 코스
   const [awaitRegion, setAwaitRegion] = useState(false) // 설문 직후: 채팅으로 지역 받기
+  const [awaitDeparture, setAwaitDeparture] = useState(false) // 지역 선택 후: 채팅으로 출발지 받기
   const [selectedDeparture, setSelectedDeparture] = useState(null) // 사용자가 고른 출발지 (Req 2.2)
   const [restrooms, setRestrooms] = useState([]) // 코스 장소별 화장실 커버리지 결과 (Req 7.1, 7.4, 7.5)
 
@@ -320,14 +320,16 @@ export default function App() {
   const handleSend = async (text) => {
     setMessages((m) => [...m, { role: 'user', content: text }])
 
-    // 설문 직후엔 지역명을 받아 바로 후보 카드로 (목록 없이 채팅 기반)
+    // 온보딩 1단계: 지역명을 채팅으로 받는다. 인식되면 출발지 질문 단계로 넘어간다.
     if (awaitRegion) {
       const r = detectRegion(text)
       if (r?.ready) {
         setAwaitRegion(false)
         if (r.id !== region.id) switchRegion(r)
-        setMessages((m) => [...m, { role: 'assistant', content: `${r.name}(으)로 떠나볼게요! 조건에 맞는 후보를 고르고 있어요…` }])
-        buildDeck(persona, r)
+        setAwaitDeparture(true)
+        const names = validDepartures(r).map((d) => d.name).join(', ')
+        setMessages((m) => [...m, { role: 'assistant', content:
+          `${r.name}(으)로 떠나볼게요! 어디서 출발하실래요?\n출발지를 채팅으로 말씀해주세요. 예: ${names}` }])
         return
       }
       if (r && !r.ready) {
@@ -335,6 +337,44 @@ export default function App() {
         return
       }
       setMessages((m) => [...m, { role: 'assistant', content: `지역 이름을 못 알아들었어요. ${readyNames()} 중에서 말씀해주세요!` }])
+      return
+    }
+
+    // 온보딩 2단계: 출발지를 채팅으로 받는다. 인식되면 설정 후 후보 카드로 진행한다.
+    if (awaitDeparture) {
+      // 사용자가 여기서 지역을 다시 말하면 지역 전환 후 다시 출발지를 묻는다.
+      const rgn = detectRegion(text)
+      if (rgn?.ready && rgn.id !== region.id) {
+        switchRegion(rgn)
+        const names = validDepartures(rgn).map((d) => d.name).join(', ')
+        setMessages((m) => [...m, { role: 'assistant', content:
+          `${rgn.name}(으)로 바꿨어요. 어디서 출발하실래요? 예: ${names}` }])
+        return
+      }
+      const rec = recognizeDeparture(text, region)
+      if (rec.status === 'single') {
+        setAwaitDeparture(false)
+        setSelectedDeparture(rec.matches[0])
+        setMessages((m) => [...m, { role: 'assistant', content:
+          `출발지를 '${rec.matches[0].name}'(으)로 정했어요! 조건에 맞는 후보를 고르고 있어요…` }])
+        buildDeck(persona, region)
+        return
+      }
+      if (rec.status === 'multiple') {
+        const names = rec.matches.map((d) => d.name).join(', ')
+        setMessages((m) => [...m, { role: 'assistant', content: `여러 곳이 매칭돼요: ${names}. 하나만 말씀해주세요.` }])
+        return
+      }
+      // notfound / none — 출발지 목록을 다시 안내
+      const names = validDepartures(region).map((d) => d.name).join(', ')
+      setMessages((m) => [...m, { role: 'assistant', content:
+        `출발지를 못 알아들었어요. 이 중에서 말씀해주세요: ${names}\n(또는 "건너뛰기"라고 하시면 대표 출발지로 진행할게요.)` }])
+      // 건너뛰기 지원
+      if (/건너|스킵|skip|아무|모르/i.test(text)) {
+        setAwaitDeparture(false)
+        setMessages((m) => [...m, { role: 'assistant', content: `${region.origin.name} 출발 기준으로 진행할게요!` }])
+        buildDeck(persona, region)
+      }
       return
     }
 
@@ -427,7 +467,12 @@ export default function App() {
       return
     }
     if (r.id !== region.id) switchRegion(r)
-    buildDeck(persona, r)
+    // 지역 선택 후 출발지를 채팅으로 묻는다 (온보딩 흐름 통일)
+    setAwaitRegion(false)
+    setAwaitDeparture(true)
+    const names = validDepartures(r).map((d) => d.name).join(', ')
+    setMessages((m) => [...m, { role: 'assistant', content:
+      `${r.name}(으)로 떠나볼게요! 어디서 출발하실래요? 예: ${names}` }])
   }
 
   // 안전지대 필터(2단계): 조건 100% 만족 장소만.
@@ -531,11 +576,6 @@ export default function App() {
               설문으로 맞춤 코스 시작하기 <span>이동 조건 → 후보 카드 → 자동 코스</span>
             </button>
             <ChatPanel messages={messages} loading={loading} onSend={handleSend} course={course} onRegion={handleRegion} />
-            <DepartureSelector
-              region={region}
-              selected={selectedDeparture}
-              myLoc={myLoc}
-              onSelect={setSelectedDeparture} />
             {(routeCourse.length || course.length) >= 2 && (
               <div className="mode-toggle" role="group" aria-label="이동 방법 선택">
                 <button className={travelMode === 'walk' ? 'on' : ''}
