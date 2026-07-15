@@ -493,3 +493,23 @@ body { font-family: 'Apple SD Gothic Neo', Pretendard, system-ui, sans-serif; co
 @media (min-width: 481px) {
   .route-quickbar { display: none; }
 }
+
+/* 경로 탐색 로딩 오버레이 — 화면 정중앙, 지도 조작은 막지 않는다 */
+.route-loading {
+  position: fixed; inset: 0; z-index: 95;
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none;
+}
+.rl-card {
+  display: flex; align-items: center; gap: 10px;
+  background: rgb(255 255 255 / 96%); border: 1px solid #e2e8f0;
+  border-radius: 14px; padding: 14px 18px;
+  box-shadow: 0 6px 24px rgb(15 23 42 / 16%);
+  font-size: 14px; font-weight: 700; color: #0f172a;
+}
+.rl-spinner {
+  width: 20px; height: 20px; border-radius: 50%; flex: none;
+  border: 3px solid #ccfbf1; border-top-color: #0f766e;
+  animation: rlspin 0.8s linear infinite;
+}
+@keyframes rlspin { to { rotate: 360deg; } }

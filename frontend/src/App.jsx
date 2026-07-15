@@ -223,6 +223,10 @@ export default function App() {
   const [lineMode, setLineMode] = useState('difficulty') // 지도 경로선 색 기준: 난이도 | 경사
   const [stage, setStage] = useState('title') // title | app — 타이틀 페이지에서 시작하기로 진입
   const [sheetOpen, setSheetOpen] = useState(true) // 모바일 바텀시트 펼침 상태
+  const [routeBusy, setRouteBusy] = useState(null) // 경로 탐색 중 오버레이 문구 (null = 없음)
+  // 이 코스에 대중교통 경로가 없음이 확인됨 — 도보와 똑같은 경로가 점선으로만 바뀌는
+  // 혼란을 막기 위해 버튼을 비활성화한다. 코스가 바뀌면 다시 알 수 없으므로 리셋.
+  const [transitUnavailable, setTransitUnavailable] = useState(false)
   // 온보딩 핸들러가 출발지 설정+경로 생성을 직접 처리하는 동안 selectedDeparture 이펙트를
   // 건너뛰기 위한 플래그 (상태는 같은 배치에서 커밋돼 구분 불가 — ref여야 함)
   const onboardRouting = useRef(false)
@@ -289,15 +293,27 @@ export default function App() {
   // 요약·핵심 토글(도보/대중교통·경사회피)은 접힌 시트의 퀵바에 항상 노출된다.
   useEffect(() => { if (route) setSheetOpen(false) }, [route])
 
+  // 코스가 바뀌면 대중교통 가용 여부는 다시 알 수 없다
+  useEffect(() => { setTransitUnavailable(false) }, [course])
+
   const loadRoute = async (resolved, mode = travelMode, avoid = avoidSlope) => {
     const token = ++routeReq.current
-    const r = await postRoute(
-      resolved.map((c) => ({ lat: c.place.lat, lng: c.place.lng, name: c.place.title })),
-      mode, avoid,
+    setRouteBusy(
+      mode === 'transit' ? '대중교통 경로를 검색하는 중입니다…'
+        : avoid ? '경사가 완만한 경로를 찾는 중입니다…'
+          : '도보 경로를 검색하는 중입니다…',
     )
-    // 더 최신 요청이 이미 나갔다면 이 응답은 버린다 (늦은 응답이 최신 경로를 덮어쓰는 레이스 방지)
-    if (token === routeReq.current) setRoute(r)
-    return r
+    try {
+      const r = await postRoute(
+        resolved.map((c) => ({ lat: c.place.lat, lng: c.place.lng, name: c.place.title })),
+        mode, avoid,
+      )
+      // 더 최신 요청이 이미 나갔다면 이 응답은 버린다 (늦은 응답이 최신 경로를 덮어쓰는 레이스 방지)
+      if (token === routeReq.current) setRoute(r)
+      return r
+    } finally {
+      if (token === routeReq.current) setRouteBusy(null)
+    }
   }
 
   // 코스 장소별 화장실 커버리지 조회 (Req 7.1, 7.4, 7.5)
@@ -337,6 +353,16 @@ export default function App() {
     setLoading(true)
     try {
       const r = await loadRoute(target, mode)
+      // 대중교통을 요청했는데 실제 탑승 구간이 하나도 없으면(전 구간 도보 권장 거리
+      // 또는 노선 없음) 도보 모드를 유지하고 버튼을 비활성화한다 — 도보와 똑같은
+      // 경로가 '대중교통'으로 표시되는 혼란 방지.
+      if (mode === 'transit' && r.legs.every((l) => l.mode !== 'transit')) {
+        setTransitUnavailable(true)
+        setMessages((m) => [...m, { role: 'assistant', content:
+          '이 코스에는 이용할 만한 대중교통이 없어요. 구간이 짧아 도보가 더 빠르거나 ' +
+          '탑승 가능한 노선을 찾지 못했습니다 — 도보 경로로 계속 안내할게요.' }])
+        return
+      }
       // 재계산이 성공한 뒤에만 모드를 전환해 UI 모드가 실제 표시 경로와 일치하도록 한다.
       setTravelMode(mode)
       setMessages((m) => [...m, { role: 'assistant', content: routeSummary(r, target) }])
@@ -772,6 +798,14 @@ export default function App() {
 
   return (
     <div className={`layout ${onboarding ? 'phase-onboard' : 'phase-map'} ${sheetOpen ? 'sheet-open' : 'sheet-closed'}`}>
+      {routeBusy && (
+        <div className="route-loading" role="status" aria-live="polite">
+          <div className="rl-card">
+            <span className="rl-spinner" aria-hidden="true" />
+            <span>{routeBusy}</span>
+          </div>
+        </div>
+      )}
       <header className="topbar">
         <h1><Logo /> 편해질지도</h1>
         <span className="sub">무장애 관광지 {places.length}곳 · 계단 회피 경로 · AI 코스 추천</span>
@@ -811,8 +845,12 @@ export default function App() {
           <div className="route-quickbar" role="group" aria-label="경로 옵션">
             <button className={travelMode === 'walk' ? 'on' : ''} disabled={loading}
                     onClick={() => switchMode('walk')}>도보</button>
-            <button className={travelMode === 'transit' ? 'on' : ''} disabled={loading}
-                    onClick={() => switchMode('transit')}>대중교통</button>
+            <button className={travelMode === 'transit' ? 'on' : ''}
+                    disabled={loading || transitUnavailable}
+                    title={transitUnavailable ? '이 코스에는 이용 가능한 대중교통이 없어요' : undefined}
+                    onClick={() => switchMode('transit')}>
+              {transitUnavailable ? '대중교통 없음' : '대중교통'}
+            </button>
             <button className={`qb-slope ${avoidSlope ? 'on' : ''}`} disabled={slopeBusy}
                     aria-pressed={avoidSlope}
                     onClick={() => handleAvoidSlope(!avoidSlope)}>
@@ -833,7 +871,11 @@ export default function App() {
                 <button className={travelMode === 'walk' ? 'on' : ''}
                         onClick={() => switchMode('walk')} disabled={loading}>도보만</button>
                 <button className={travelMode === 'transit' ? 'on' : ''}
-                        onClick={() => switchMode('transit')} disabled={loading}>대중교통 포함</button>
+                        onClick={() => switchMode('transit')}
+                        disabled={loading || transitUnavailable}
+                        title={transitUnavailable ? '이 코스에는 이용 가능한 대중교통이 없어요' : undefined}>
+                  {transitUnavailable ? '대중교통 없음' : '대중교통 포함'}
+                </button>
               </div>
             )}
             <RouteSteps route={route} course={routeCourse.length ? routeCourse : course} restrooms={restrooms}
