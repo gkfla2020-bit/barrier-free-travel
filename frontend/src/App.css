@@ -420,8 +420,26 @@ body { font-family: 'Apple SD Gothic Neo', Pretendard, system-ui, sans-serif; co
     display: flex; flex-direction: column;
   }
   .layout.phase-map.sheet-open .side { height: 62vh; height: 62dvh; }
-  .layout.phase-map.sheet-closed .side { height: 58px; overflow: hidden; }
-  .layout.phase-map.sheet-closed .side > :not(.sheet-handle) { display: none; }
+  /* 접힘: 핸들 + 퀵바(핵심 토글)만 남기고 지도를 최대로 */
+  .layout.phase-map.sheet-closed .side { height: auto; overflow: hidden; }
+  .layout.phase-map.sheet-closed .side > :not(.sheet-handle):not(.route-quickbar) { display: none; }
+
+  /* 퀵바: 접힌 시트에서도 항상 조작 가능한 경로 옵션 (도보/대중교통·경사회피) */
+  .route-quickbar {
+    display: flex; gap: 6px; padding: 0 12px calc(10px + env(safe-area-inset-bottom));
+    flex: none;
+  }
+  .route-quickbar button {
+    flex: 1; min-height: 44px; border: 1px solid #cbd5e1; background: #fff; color: #334155;
+    border-radius: 10px; font-size: 12.5px; font-weight: 700; cursor: pointer; white-space: nowrap;
+  }
+  .route-quickbar button.on { background: #0f766e; border-color: #0f766e; color: #fff; }
+  .route-quickbar button.qb-slope.on { background: #1d4ed8; border-color: #1d4ed8; }
+  .route-quickbar button:disabled { opacity: .55; }
+
+  /* 퀵바가 같은 기능을 하므로 시트 내부의 기존 토글은 모바일에서 숨김 (중복 방지) */
+  .layout.phase-map .mode-toggle { display: none; }
+  .layout.phase-map .slope-opt .slope-toggle { display: none; }
 
   /* 시트 핸들: 잡는 부분임이 보이게 그래버 + 요약 + 화살표 */
   .sheet-handle {
@@ -469,4 +487,9 @@ body { font-family: 'Apple SD Gothic Neo', Pretendard, system-ui, sans-serif; co
 /* 바텀시트 핸들은 모바일 지도 단계 전용 — 데스크톱에선 숨김 */
 @media (min-width: 481px) {
   .sheet-handle { display: none; }
+}
+
+/* 퀵바는 모바일 전용 — 데스크톱은 기존 mode-toggle + RouteSteps 경사 토글 사용 */
+@media (min-width: 481px) {
+  .route-quickbar { display: none; }
 }

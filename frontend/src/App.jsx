@@ -285,8 +285,9 @@ export default function App() {
     [places],
   )
 
-  // 새 경로가 도착하면 모바일 시트를 펼쳐 요약을 먼저 보여준다 (접으면 지도 전면)
-  useEffect(() => { if (route) setSheetOpen(true) }, [route])
+  // 새 경로가 도착하면 모바일 시트를 접어 지도를 크게 보여준다.
+  // 요약·핵심 토글(도보/대중교통·경사회피)은 접힌 시트의 퀵바에 항상 노출된다.
+  useEffect(() => { if (route) setSheetOpen(false) }, [route])
 
   const loadRoute = async (resolved, mode = travelMode, avoid = avoidSlope) => {
     const token = ++routeReq.current
@@ -805,6 +806,20 @@ export default function App() {
           <span className="sheet-summary">{sheetSummary}</span>
           <span className="sheet-arrow" aria-hidden="true">{sheetOpen ? '▾' : '▴'}</span>
         </button>
+        {/* 모바일 퀵바 — 시트가 접혀 있어도 핵심 경로 옵션은 바로 조작 가능 */}
+        {route && (routeCourse.length || course.length) >= 2 && (
+          <div className="route-quickbar" role="group" aria-label="경로 옵션">
+            <button className={travelMode === 'walk' ? 'on' : ''} disabled={loading}
+                    onClick={() => switchMode('walk')}>도보</button>
+            <button className={travelMode === 'transit' ? 'on' : ''} disabled={loading}
+                    onClick={() => switchMode('transit')}>대중교통</button>
+            <button className={`qb-slope ${avoidSlope ? 'on' : ''}`} disabled={slopeBusy}
+                    aria-pressed={avoidSlope}
+                    onClick={() => handleAvoidSlope(!avoidSlope)}>
+              {slopeBusy ? '경사회피 적용 중…' : `경사회피 ${avoidSlope ? 'ON' : 'OFF'}`}
+            </button>
+          </div>
+        )}
         {survey && <PersonaSurvey onSubmit={handleSurvey} onClose={() => setSurvey(false)} />}
         {deck && <CardDeck cards={deck} onDone={handleDeckDone} onClose={() => setDeck(null)} />}
         {!survey && !deck && (
