@@ -17,3 +17,10 @@ build/
 backend/scripts/raw/
 *.env.local
 venv/
+
+# 내부 작업 문서 — 저장소에 올리지 않음 (로컬 보관)
+ARCHITECTURE.md
+DEMO_SCENARIO.md
+PAINPOINTS.md
+PROJECT_STATUS.md
+docs/
